@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services Demo - Commune</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        <!-- Header -->
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">Available Services</h1>
+            <p class="mt-2 text-slate-600">Browse and search all available services in Sunset Apartments</p>
+        </div>
+
+        <!-- Search and Filter Controls -->
+        <div class="bg-white rounded-lg shadow p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Search Services</h2>
+            
+            <!-- Search Bar -->
+            <div class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="searchInput"
+                    placeholder="Search services..."
+                    class="flex-1 px-4 py-2 border rounded-md"
+                />
+                <button onclick="searchServices()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    Search
+                </button>
+                <button onclick="clearSearch()" class="px-4 py-2 border rounded-md hover:bg-slate-100">
+                    Clear
+                </button>
+            </div>
+
+            <!-- Filters -->
+            <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                    <label class="text-sm font-medium text-slate-700 mb-1.5 block">Category</label>
+                    <select id="categoryFilter" onchange="fetchServices()" class="w-full px-4 py-2 border rounded-md">
+                        <option value="">All Categories</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-slate-700 mb-1.5 block">Status</label>
+                    <select id="statusFilter" onchange="fetchServices()" class="w-full px-4 py-2 border rounded-md">
+                        <option value="">All Statuses</option>
+                        <option value="open">Open</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Count -->
+        <div id="resultsCount" class="text-sm text-slate-600"></div>
+
+        <!-- Services Grid -->
+        <div id="servicesGrid" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div class="text-center py-12 col-span-full">
+                <p class="text-slate-600">Loading services...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const statusColors = {
+            'open': 'bg-green-100 text-green-800',
+            'in_progress': 'bg-blue-100 text-blue-800',
+            'completed': 'bg-gray-100 text-gray-800',
+            'cancelled': 'bg-red-100 text-red-800'
+        };
+
+        const statusLabels = {
+            'open': 'Open',
+            'in_progress': 'In Progress',
+            'completed': 'Completed',
+            'cancelled': 'Cancelled'
+        };
+
+        async function fetchServices() {
+            const params = new URLSearchParams();
+            const category = document.getElementById('categoryFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            const search = document.getElementById('searchInput').value;
+
+            if (category) params.append('category', category);
+            if (status) params.append('status', status);
+            if (search) params.append('search', search);
+
+            try {
+                const response = await fetch(`/api/services?${params.toString()}`);
+                const services = await response.json();
+                
+                displayServices(services);
+                updateCategories(services);
+            } catch (error) {
+                console.error('Failed to fetch services:', error);
+            }
+        }
+
+        function displayServices(services) {
+            const grid = document.getElementById('servicesGrid');
+            const resultsCount = document.getElementById('resultsCount');
+            
+            resultsCount.textContent = `Found ${services.length} service${services.length !== 1 ? 's' : ''}`;
+            
+            if (services.length === 0) {
+                grid.innerHTML = `
+                    <div class="bg-white rounded-lg shadow p-12 text-center col-span-full">
+                        <p class="text-slate-600">No services found.</p>
+                        <p class="text-sm text-slate-500 mt-2">Try adjusting your search criteria or filters.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = services.map(service => `
+                <div class="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6 space-y-4">
+                    <div class="flex justify-between items-start gap-2">
+                        <h3 class="text-lg font-semibold line-clamp-2">${service.Title}</h3>
+                        <span class="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${statusColors[service.Status]}">
+                            ${statusLabels[service.Status]}
+                        </span>
+                    </div>
+                    ${service.Category ? `
+                        <div class="text-xs font-medium text-blue-600">${service.Category}</div>
+                    ` : ''}
+                    <p class="text-sm text-slate-600 line-clamp-3">${service.Description}</p>
+                    <div class="space-y-2 text-sm text-slate-600">
+                        ${service.Community ? `
+                            <div class="flex items-center gap-2">
+                                <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span class="truncate">${service.Community.Name}</span>
+                            </div>
+                        ` : ''}
+                        ${service.Requester ? `
+                            <div class="flex items-center gap-2">
+                                <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                <span class="truncate">${service.Requester.Name}</span>
+                            </div>
+                        ` : ''}
+                        ${service.Budget ? `
+                            <div class="flex items-center gap-2">
+                                <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>Budget: $${service.Budget.toFixed(2)}</span>
+                            </div>
+                        ` : ''}
+                        <div class="flex items-center gap-2">
+                            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Posted ${formatDate(service.CreatedAt)}</span>
+                        </div>
+                        ${service.ServiceOffers && service.ServiceOffers.length > 0 ? `
+                            <div class="pt-2 border-t">
+                                <span class="text-xs font-medium text-slate-700">
+                                    ${service.ServiceOffers.length} offer${service.ServiceOffers.length !== 1 ? 's' : ''} received
+                                </span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateCategories(services) {
+            const categoryFilter = document.getElementById('categoryFilter');
+            const categories = [...new Set(services.map(s => s.Category).filter(Boolean))];
+            const currentValue = categoryFilter.value;
+            
+            categoryFilter.innerHTML = '<option value="">All Categories</option>' + 
+                categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+            
+            categoryFilter.value = currentValue;
+        }
+
+        function formatDate(dateString) {
+            return new Date(dateString).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        function searchServices() {
+            fetchServices();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            fetchServices();
+        }
+
+        // Initial load
+        fetchServices();
+    </script>
+</body>
+</html>

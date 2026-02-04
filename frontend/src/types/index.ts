@@ -55,13 +55,30 @@ export interface JoinRequest {
   Community?: Community;
 }
 
-// Service request status type
-export type ServiceRequestStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+// Service status type
+export type ServiceStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+// Service request status type (alias for ServiceStatus)
+export type ServiceRequestStatus = ServiceStatus;
 
 // Service offer status type
 export type ServiceOfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
 
-// Service request type
+// Common service categories
+export type ServiceCategory = 
+  | 'Plumbing' 
+  | 'Electrical' 
+  | 'Cleaning' 
+  | 'HVAC' 
+  | 'Painting' 
+  | 'Security' 
+  | 'Appliance Repair' 
+  | 'Pest Control'
+  | 'Landscaping'
+  | 'Carpentry'
+  | 'Other';
+
+// Service Request type
 export interface ServiceRequest {
   ID: number;
   CreatedAt: string;
@@ -69,10 +86,10 @@ export interface ServiceRequest {
   DeletedAt?: string;
   Title: string;
   Description: string;
-  Category?: string;
+  Category?: ServiceCategory | string;
   RequesterID: number;
   CommunityID: number;
-  Status: ServiceRequestStatus;
+  Status: ServiceStatus;
   Budget?: number;
   AcceptedOfferID?: number;
   CompletedAt?: string;
@@ -80,9 +97,10 @@ export interface ServiceRequest {
   Community?: Community;
   ServiceOffers?: ServiceOffer[];
   AcceptedOffer?: ServiceOffer;
+  Comments?: Comment[];
 }
 
-// Service offer type
+// Service Offer type
 export interface ServiceOffer {
   ID: number;
   CreatedAt: string;
@@ -96,6 +114,20 @@ export interface ServiceOffer {
   Status: ServiceOfferStatus;
   ServiceRequest?: ServiceRequest;
   Provider?: User;
+}
+
+// Comment type
+export interface Comment {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  Content: string;
+  AuthorID: number;
+  Author?: User;
+  PostID?: number;
+  ServiceRequestID?: number;
+  ServiceOfferID?: number;
+  ParentCommentID?: number;
 }
 
 // Auth context type
