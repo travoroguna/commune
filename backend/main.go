@@ -8,6 +8,7 @@ import (
 
 	gormigrate "github.com/go-gormigrate/gormigrate/v2"
 	"github.com/olivere/vite"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ type User struct {
 
 func main() {
 	// Initialize database
-	db, err := gorm.Open(sqlite.Open("commune.db"), &gorm.Config{})
+	db, err := initDatabase()
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -104,6 +105,30 @@ func runMigrations(db *gorm.DB) error {
 
 	log.Println("Migrations completed successfully")
 	return nil
+}
+
+func initDatabase() (*gorm.DB, error) {
+	// Check if PostgreSQL connection details are provided
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbName := os.Getenv("DB_NAME")
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
+
+	// If PostgreSQL env vars are set, use PostgreSQL
+	if dbHost != "" && dbName != "" && dbUser != "" && dbPassword != "" {
+		if dbPort == "" {
+			dbPort = "5432"
+		}
+		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+			dbHost, dbUser, dbPassword, dbName, dbPort)
+		log.Println("Connecting to PostgreSQL database...")
+		return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	}
+
+	// Otherwise, fallback to SQLite
+	log.Println("Connecting to SQLite database...")
+	return gorm.Open(sqlite.Open("commune.db"), &gorm.Config{})
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

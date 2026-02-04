@@ -2,11 +2,23 @@
 
 A full-stack application starter template with Go backend and React frontend.
 
+## Quick Start with Docker 🐳
+
+The easiest way to get started is using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+Then access the application at http://localhost:3000
+
+For detailed Docker setup instructions, see [DOCKER.md](DOCKER.md).
+
 ## Tech Stack
 
 ### Backend
 - **Go** - Modern, fast backend language
-- **GORM** - ORM library for Go
+- **GORM** - ORM library for Go with support for PostgreSQL and SQLite
 - **gormmigrate** - Database migrations
 - **olivere/vite** - Vite integration for serving frontend
 
@@ -37,7 +49,21 @@ commune/
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: Docker (Recommended)
+
+For the quickest setup with all services (PostgreSQL, Redis, SeaweedFS), use Docker:
+
+```bash
+docker compose up -d
+```
+
+See [DOCKER.md](DOCKER.md) for detailed instructions.
+
+### Option 2: Native Development
+
+For local development with hot-reloading:
+
+#### Prerequisites
 
 - Go 1.21 or higher
 - Node.js 18 or higher
@@ -45,6 +71,8 @@ commune/
 - [Air](https://github.com/air-verse/air) (for auto-reloading Go backend in dev mode)
 
 ### Installation
+
+**Note:** If using Docker, skip to the Docker section in [DOCKER.md](DOCKER.md).
 
 1. Clone the repository:
 ```bash
@@ -109,8 +137,18 @@ MODE=production PORT=3000 ./commune
 
 ## Environment Variables
 
+**Application Settings:**
 - `MODE` - Set to `development` or `production` (default: `development`)
 - `PORT` - Server port (default: `3000`)
+
+**Database Settings (PostgreSQL):**
+- `DB_HOST` - PostgreSQL host (if not set, uses SQLite)
+- `DB_PORT` - PostgreSQL port (default: `5432`)
+- `DB_NAME` - Database name
+- `DB_USER` - Database user
+- `DB_PASSWORD` - Database password
+
+**Note:** If PostgreSQL environment variables are not set, the application will use SQLite (`commune.db`) by default.
 
 ## Development
 

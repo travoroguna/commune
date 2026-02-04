@@ -1,0 +1,141 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: commune-postgres
+    environment:
+      POSTGRES_DB: commune
+      POSTGRES_USER: commune
+      POSTGRES_PASSWORD: commune_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commune"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commune-network
+
+  # Redis (Valkey-compatible) for caching and session management
+  redis:
+    image: valkey/valkey:8-alpine
+    container_name: commune-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commune-network
+
+  # SeaweedFS Master Server
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    container_name: commune-seaweedfs-master
+    command: "master -ip=seaweedfs-master -port=9333"
+    ports:
+      - "9333:9333"
+    volumes:
+      - seaweedfs_master_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9333/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commune-network
+
+  # SeaweedFS Volume Server
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    container_name: commune-seaweedfs-volume
+    command: 'volume -mserver="seaweedfs-master:9333" -port=8080 -ip=seaweedfs-volume -max=100'
+    ports:
+      - "8080:8080"
+    volumes:
+      - seaweedfs_volume_data:/data
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commune-network
+
+  # SeaweedFS Filer (optional but recommended for file management)
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    container_name: commune-seaweedfs-filer
+    command: 'filer -master="seaweedfs-master:9333" -ip=seaweedfs-filer -port=8888'
+    ports:
+      - "8888:8888"
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8888/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - commune-network
+
+  # Main Application (Backend + Frontend)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: commune-app
+    environment:
+      MODE: production
+      PORT: 3000
+      # Database configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: commune
+      DB_USER: commune
+      DB_PASSWORD: commune_password
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # SeaweedFS configuration
+      SEAWEEDFS_MASTER: seaweedfs-master:9333
+      SEAWEEDFS_FILER: seaweedfs-filer:8888
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+    networks:
+      - commune-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  seaweedfs_master_data:
+    driver: local
+  seaweedfs_volume_data:
+    driver: local
+
+networks:
+  commune-network:
+    driver: bridge
