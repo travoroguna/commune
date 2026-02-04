@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate, Link } from '@tanstack/react-router';
+import { createFileRoute, Navigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { joinRequestApi } from '@/api/client';
