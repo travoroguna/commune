@@ -1,6 +1,7 @@
 # Backend (Go)
 backend/commune
 backend/tmp
+backend/build-errors.log
 *.exe
 *.exe~
 *.dll
