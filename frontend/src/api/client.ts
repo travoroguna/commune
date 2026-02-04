@@ -1,4 +1,4 @@
-import type { User, UserRole, Community, UserCommunity, JoinRequest } from '@/types';
+import type { User, UserRole, Community, UserCommunity, JoinRequest, ServiceRequest, ServiceOffer } from '@/types';
 
 const API_BASE = '/api';
 
@@ -258,6 +258,118 @@ export const joinRequestApi = {
   async reject(requestId: number): Promise<JoinRequest> {
     const response = await fetch(`${API_BASE}/join-requests/${requestId}/reject`, {
       method: 'POST',
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+};
+
+// Service Request APIs
+export const serviceRequestApi = {
+  async getAll(params?: { community_id?: number; status?: string }): Promise<ServiceRequest[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.community_id) queryParams.append('community_id', params.community_id.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    
+    const response = await fetch(`${API_BASE}/service-requests?${queryParams.toString()}`, {
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async getById(id: number): Promise<ServiceRequest> {
+    const response = await fetch(`${API_BASE}/service-requests/${id}`, {
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async create(data: {
+    title: string;
+    description: string;
+    category?: string;
+    budget?: number;
+    community_id: number;
+  }): Promise<ServiceRequest> {
+    const response = await fetch(`${API_BASE}/service-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async update(id: number, data: Partial<ServiceRequest>): Promise<ServiceRequest> {
+    const response = await fetch(`${API_BASE}/service-requests/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async acceptOffer(requestId: number, offerId: number): Promise<ServiceRequest> {
+    const response = await fetch(`${API_BASE}/service-requests/${requestId}/accept-offer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offer_id: offerId }),
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+};
+
+// Service Offer APIs
+export const serviceOfferApi = {
+  async getAll(params?: { provider_id?: number; status?: string }): Promise<ServiceOffer[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.provider_id) queryParams.append('provider_id', params.provider_id.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    
+    const response = await fetch(`${API_BASE}/service-offers?${queryParams.toString()}`, {
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async getById(id: number): Promise<ServiceOffer> {
+    const response = await fetch(`${API_BASE}/service-offers/${id}`, {
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async create(data: {
+    service_request_id: number;
+    description: string;
+    proposed_price?: number;
+    estimated_duration?: string;
+  }): Promise<ServiceOffer> {
+    const response = await fetch(`${API_BASE}/service-offers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async withdraw(id: number): Promise<ServiceOffer> {
+    const response = await fetch(`${API_BASE}/service-offers/${id}/withdraw`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  async getAcceptedOffers(params?: { provider_id?: number }): Promise<ServiceOffer[]> {
+    const queryParams = new URLSearchParams();
+    queryParams.append('status', 'accepted');
+    if (params?.provider_id) queryParams.append('provider_id', params.provider_id.toString());
+    
+    const response = await fetch(`${API_BASE}/service-offers?${queryParams.toString()}`, {
       credentials: 'include',
     });
     return handleResponse(response);
