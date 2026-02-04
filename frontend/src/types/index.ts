@@ -55,6 +55,49 @@ export interface JoinRequest {
   Community?: Community;
 }
 
+// Service request status type
+export type ServiceRequestStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+// Service offer status type
+export type ServiceOfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+
+// Service request type
+export interface ServiceRequest {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  Title: string;
+  Description: string;
+  Category?: string;
+  RequesterID: number;
+  CommunityID: number;
+  Status: ServiceRequestStatus;
+  Budget?: number;
+  AcceptedOfferID?: number;
+  CompletedAt?: string;
+  Requester?: User;
+  Community?: Community;
+  ServiceOffers?: ServiceOffer[];
+  AcceptedOffer?: ServiceOffer;
+}
+
+// Service offer type
+export interface ServiceOffer {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  ServiceRequestID: number;
+  ProviderID: number;
+  Description: string;
+  ProposedPrice?: number;
+  EstimatedDuration?: string;
+  Status: ServiceOfferStatus;
+  ServiceRequest?: ServiceRequest;
+  Provider?: User;
+}
+
 // Auth context type
 export interface AuthContextType {
   user: User | null;
