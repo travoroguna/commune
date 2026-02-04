@@ -63,10 +63,10 @@ export interface ServiceRequest {
   DeletedAt?: string;
   Title: string;
   Description: string;
-  Category?: string;
+  Category?: ServiceCategory;
   RequesterID: number;
   CommunityID: number;
-  Status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+  Status: ServiceStatus;
   Budget?: number;
   AcceptedOfferID?: number;
   CompletedAt?: string;
@@ -75,6 +75,23 @@ export interface ServiceRequest {
   ServiceOffers?: ServiceOffer[];
   Comments?: Comment[];
 }
+
+// Service status type
+export type ServiceStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+// Common service categories
+export type ServiceCategory = 
+  | 'Plumbing' 
+  | 'Electrical' 
+  | 'Cleaning' 
+  | 'HVAC' 
+  | 'Painting' 
+  | 'Security' 
+  | 'Appliance Repair' 
+  | 'Pest Control'
+  | 'Landscaping'
+  | 'Carpentry'
+  | 'Other';
 
 // Service Offer type
 export interface ServiceOffer {

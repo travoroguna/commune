@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -232,8 +233,38 @@ func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 		if input.Category != nil {
 			service.Category = *input.Category
 		}
+		// Update status with validation
 		if input.Status != nil {
-			service.Status = *input.Status
+			newStatus := *input.Status
+			// Validate state transitions
+			validTransitions := map[string][]string{
+				"open":        {"in_progress", "cancelled"},
+				"in_progress": {"completed", "cancelled"},
+				"completed":   {}, // Cannot transition from completed
+				"cancelled":   {}, // Cannot transition from cancelled
+			}
+			
+			allowedNextStates, exists := validTransitions[service.Status]
+			if !exists {
+				writeError(w, "Invalid current status", http.StatusBadRequest)
+				return
+			}
+			
+			// Check if transition is valid
+			validTransition := false
+			for _, allowed := range allowedNextStates {
+				if newStatus == allowed {
+					validTransition = true
+					break
+				}
+			}
+			
+			if !validTransition && newStatus != service.Status {
+				writeError(w, fmt.Sprintf("Invalid status transition from %s to %s", service.Status, newStatus), http.StatusBadRequest)
+				return
+			}
+			
+			service.Status = newStatus
 		}
 		if input.Budget != nil {
 			service.Budget = *input.Budget

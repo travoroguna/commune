@@ -18,20 +18,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Search, MapPin, DollarSign, Clock, User } from 'lucide-react';
-import type { ServiceRequest } from '@/types';
+import type { ServiceRequest, ServiceCategory, ServiceStatus } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/services')({
   component: ServicesPage,
 });
 
-const statusColors = {
+const statusColors: Record<ServiceStatus, string> = {
   open: 'bg-green-100 text-green-800',
   in_progress: 'bg-blue-100 text-blue-800',
   completed: 'bg-gray-100 text-gray-800',
   cancelled: 'bg-red-100 text-red-800',
 };
 
-const statusLabels = {
+const statusLabels: Record<ServiceStatus, string> = {
   open: 'Open',
   in_progress: 'In Progress',
   completed: 'Completed',
@@ -128,7 +128,11 @@ function ServicesPage() {
 
   // Extract unique categories from services
   const categories = Array.from(
-    new Set(services.map((s) => s.Category).filter(Boolean))
+    new Set(
+      services
+        .map((s) => s.Category)
+        .filter((cat): cat is ServiceCategory => cat !== undefined)
+    )
   );
 
   return (
@@ -197,7 +201,7 @@ function ServicesPage() {
                   <SelectContent>
                     <SelectItem value="all">All Categories</SelectItem>
                     {categories.map((category) => (
-                      <SelectItem key={category} value={category!}>
+                      <SelectItem key={category} value={category}>
                         {category}
                       </SelectItem>
                     ))}
