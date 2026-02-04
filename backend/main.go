@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -44,15 +45,29 @@ func main() {
 	mux.HandleFunc("/api/users", usersHandler(db))
 
 	// Vite integration for serving frontend
-	var viteHandler http.Handler
+	var viteHandler *vite.Handler
 	if mode == "production" {
 		// In production, serve the built static files
 		log.Println("Running in PRODUCTION mode")
-		viteHandler = vite.NewStatic("../frontend/dist")
+		distFS := os.DirFS("../frontend/dist")
+		viteHandler, err = vite.NewHandler(vite.Config{
+			FS:    distFS,
+			IsDev: false,
+		})
+		if err != nil {
+			log.Fatal("Failed to create vite handler:", err)
+		}
 	} else {
 		// In development, proxy to Vite dev server
 		log.Println("Running in DEVELOPMENT mode")
-		viteHandler = vite.NewProxy("http://localhost:5173")
+		viteHandler, err = vite.NewHandler(vite.Config{
+			FS:      os.DirFS("../frontend"),
+			IsDev:   true,
+			ViteURL: "http://localhost:5173",
+		})
+		if err != nil {
+			log.Fatal("Failed to create vite handler:", err)
+		}
 	}
 
 	// Use vite handler for all non-API routes
@@ -83,7 +98,12 @@ func runMigrations(db *gorm.DB) error {
 		},
 	})
 
-	return m.Migrate()
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
+
+	log.Println("Migrations completed successfully")
+	return nil
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
