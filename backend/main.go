@@ -56,6 +56,9 @@ func main() {
 	// Join request routes
 	setupJoinRequestRoutes(mux, db)
 
+	// Service request and offer routes
+	setupServiceRequestRoutes(mux, db)
+
 	// Vite integration for serving frontend
 	var viteHandler *vite.Handler
 	if mode == "production" {
