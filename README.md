@@ -42,6 +42,7 @@ commune/
 - Go 1.21 or higher
 - Node.js 18 or higher
 - npm or yarn
+- [Air](https://github.com/air-verse/air) (for auto-reloading Go backend in dev mode)
 
 ### Installation
 
@@ -67,16 +68,20 @@ cd ..
 
 ## Development Mode
 
-In development mode, the frontend and backend run independently:
-- Vite dev server runs on port 5173
-- Go backend runs on port 3000
-- The Go backend proxies requests to Vite dev server for HMR (Hot Module Replacement)
+In development mode, the frontend and backend run independently with hot-reloading:
+- Vite dev server runs on port 5173 with Hot Module Replacement (HMR)
+- Go backend runs on port 3000 with [Air](https://github.com/air-verse/air) for auto-rebuilding
+- The Go backend proxies requests to Vite dev server for HMR
+
+Air automatically watches for changes in your Go files and rebuilds/restarts the backend server when changes are detected.
 
 To start both servers:
 
 ```bash
 ./scripts/dev.sh
 ```
+
+The script will automatically install Air if it's not already installed.
 
 Access the application at: http://localhost:3000
 

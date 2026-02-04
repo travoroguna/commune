@@ -14,10 +14,17 @@ cd ..
 # Wait a bit for Vite to start
 sleep 3
 
-# Start Go backend
-echo "Starting Go backend on port 3000..."
+# Check if Air is installed
+if ! command -v air &> /dev/null; then
+    echo "Air is not installed. Installing Air..."
+    go install github.com/air-verse/air@latest
+    echo "Air installed successfully!"
+fi
+
+# Start Go backend with Air
+echo "Starting Go backend with Air on port 3000..."
 cd backend
-MODE=development PORT=3000 go run main.go &
+MODE=development PORT=3000 air &
 GO_PID=$!
 cd ..
 
