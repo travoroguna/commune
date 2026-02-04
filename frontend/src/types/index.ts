@@ -55,6 +55,73 @@ export interface JoinRequest {
   Community?: Community;
 }
 
+// Service Request type
+export interface ServiceRequest {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  Title: string;
+  Description: string;
+  Category?: ServiceCategory;
+  RequesterID: number;
+  CommunityID: number;
+  Status: ServiceStatus;
+  Budget?: number;
+  AcceptedOfferID?: number;
+  CompletedAt?: string;
+  Requester?: User;
+  Community?: Community;
+  ServiceOffers?: ServiceOffer[];
+  Comments?: Comment[];
+}
+
+// Service status type
+export type ServiceStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+// Common service categories
+export type ServiceCategory = 
+  | 'Plumbing' 
+  | 'Electrical' 
+  | 'Cleaning' 
+  | 'HVAC' 
+  | 'Painting' 
+  | 'Security' 
+  | 'Appliance Repair' 
+  | 'Pest Control'
+  | 'Landscaping'
+  | 'Carpentry'
+  | 'Other';
+
+// Service Offer type
+export interface ServiceOffer {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  ServiceRequestID: number;
+  ProviderID: number;
+  Description: string;
+  ProposedPrice?: number;
+  EstimatedDuration?: string;
+  Status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+  Provider?: User;
+}
+
+// Comment type
+export interface Comment {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  Content: string;
+  AuthorID: number;
+  Author?: User;
+  PostID?: number;
+  ServiceRequestID?: number;
+  ServiceOfferID?: number;
+  ParentCommentID?: number;
+}
+
 // Auth context type
 export interface AuthContextType {
   user: User | null;
