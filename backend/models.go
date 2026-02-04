@@ -85,6 +85,9 @@ type Post struct {
 }
 
 // ServiceRequest represents a request for a service in a community
+// Note: AcceptedOfferID creates a bidirectional relationship with ServiceOffer.
+// When accepting an offer, update both ServiceRequest.AcceptedOfferID and ServiceRequest.Status
+// When deleting a ServiceRequest, associated ServiceOffers will need to be handled (cascade or set null)
 type ServiceRequest struct {
 	gorm.Model
 	Title          string `gorm:"not null"`
@@ -94,7 +97,7 @@ type ServiceRequest struct {
 	CommunityID    uint   `gorm:"not null;index"`
 	Status         string `gorm:"type:varchar(50);default:'open';not null;index"` // open, in_progress, completed, cancelled
 	Budget         float64
-	AcceptedOfferID *uint  `gorm:"index"`
+	AcceptedOfferID *uint  `gorm:"index"` // References ServiceOffer.ID - nullable until offer is accepted
 	CompletedAt    *time.Time
 	
 	// Relationships
@@ -102,7 +105,7 @@ type ServiceRequest struct {
 	Community      Community      `gorm:"foreignKey:CommunityID"`
 	ServiceOffers  []ServiceOffer `gorm:"foreignKey:ServiceRequestID"`
 	Comments       []Comment      `gorm:"foreignKey:ServiceRequestID"`
-	AcceptedOffer  *ServiceOffer  `gorm:"foreignKey:AcceptedOfferID"`
+	AcceptedOffer  *ServiceOffer  `gorm:"foreignKey:AcceptedOfferID;constraint:OnDelete:SET NULL"` // Set to NULL if offer is deleted
 }
 
 // ServiceOffer represents an offer by a service provider for a service request
@@ -146,7 +149,7 @@ type Rating struct {
 	ProviderID       uint   `gorm:"not null;index"`
 	RaterID          uint   `gorm:"not null;index"`
 	ServiceRequestID uint   `gorm:"not null;index"`
-	Score            int    `gorm:"not null"` // 1-5 stars
+	Score            int    `gorm:"not null;check:score >= 1 AND score <= 5"` // 1-5 stars with database constraint
 	Review           string `gorm:"type:text"`
 	
 	// Relationships
