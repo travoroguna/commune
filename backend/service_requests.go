@@ -300,7 +300,7 @@ func deleteServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, u
 
 // acceptServiceOffer handles PUT /api/service-requests/:id/accept-offer
 func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, requestID uint) {
-	if r.Method != http.MethodPut {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -419,6 +419,7 @@ func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user
 	// Get query parameters
 	serviceRequestIDStr := r.URL.Query().Get("service_request_id")
 	myOffers := r.URL.Query().Get("my_offers") == "true"
+	providerIDStr := r.URL.Query().Get("provider_id")
 
 	query := db.Model(&ServiceOffer{}).
 		Preload("Provider").
@@ -439,6 +440,16 @@ func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user
 	// Filter by current user's offers if requested
 	if myOffers {
 		query = query.Where("provider_id = ?", user.ID)
+	}
+
+	// Filter by provider ID if specified
+	if providerIDStr != "" {
+		providerID, err := strconv.ParseUint(providerIDStr, 10, 32)
+		if err != nil {
+			writeError(w, "Invalid provider_id", http.StatusBadRequest)
+			return
+		}
+		query = query.Where("provider_id = ?", providerID)
 	}
 
 	var offers []ServiceOffer
@@ -521,14 +532,21 @@ func serviceOfferDetailHandler(db *gorm.DB) http.HandlerFunc {
 
 		// Extract ID from path
 		path := strings.TrimPrefix(r.URL.Path, "/api/service-offers/")
-		if path == "" {
+		parts := strings.Split(path, "/")
+		if len(parts) == 0 || parts[0] == "" {
 			writeError(w, "Service offer ID required", http.StatusBadRequest)
 			return
 		}
 
-		offerID, err := strconv.ParseUint(path, 10, 32)
+		offerID, err := strconv.ParseUint(parts[0], 10, 32)
 		if err != nil {
 			writeError(w, "Invalid service offer ID", http.StatusBadRequest)
+			return
+		}
+
+		// Handle withdraw endpoint
+		if len(parts) >= 2 && parts[1] == "withdraw" {
+			withdrawServiceOffer(w, r, db, user, uint(offerID))
 			return
 		}
 
@@ -543,6 +561,50 @@ func serviceOfferDetailHandler(db *gorm.DB) http.HandlerFunc {
 			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// withdrawServiceOffer handles POST /api/service-offers/:id/withdraw
+func withdrawServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, offerID uint) {
+	if r.Method != http.MethodPost {
+		writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var offer ServiceOffer
+	if err := db.First(&offer, offerID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			writeError(w, "Service offer not found", http.StatusNotFound)
+		} else {
+			writeError(w, "Failed to fetch service offer", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Only provider can withdraw
+	if offer.ProviderID != user.ID {
+		writeError(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+
+	// Cannot withdraw accepted offers
+	if offer.Status == "accepted" {
+		writeError(w, "Cannot withdraw accepted offers", http.StatusBadRequest)
+		return
+	}
+
+	// Update status to withdrawn
+	if err := db.Model(&offer).Update("status", "withdrawn").Error; err != nil {
+		writeError(w, "Failed to withdraw service offer", http.StatusInternalServerError)
+		return
+	}
+
+	// Reload with associations
+	if err := db.Preload("Provider").Preload("ServiceRequest").First(&offer, offerID).Error; err != nil {
+		writeError(w, "Failed to load updated offer", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, offer, http.StatusOK)
 }
 
 // getServiceOffer handles GET /api/service-offers/:id
