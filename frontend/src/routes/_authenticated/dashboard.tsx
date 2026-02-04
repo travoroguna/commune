@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Users, Building2, UserPlus, Mail } from 'lucide-react';
+import { Users, Building2, UserPlus, Mail, Briefcase } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
   component: DashboardPage,
@@ -112,6 +112,20 @@ function DashboardPage() {
               </Link>
             </Card>
           )}
+
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <Link to="/services">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Briefcase className="h-8 w-8 text-indigo-600" />
+                  <div>
+                    <CardTitle>Browse Services</CardTitle>
+                    <CardDescription>View available services</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+            </Link>
+          </Card>
 
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <Link to="/profile">

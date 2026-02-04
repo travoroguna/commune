@@ -55,6 +55,56 @@ export interface JoinRequest {
   Community?: Community;
 }
 
+// Service Request type
+export interface ServiceRequest {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  Title: string;
+  Description: string;
+  Category?: string;
+  RequesterID: number;
+  CommunityID: number;
+  Status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+  Budget?: number;
+  AcceptedOfferID?: number;
+  CompletedAt?: string;
+  Requester?: User;
+  Community?: Community;
+  ServiceOffers?: ServiceOffer[];
+  Comments?: Comment[];
+}
+
+// Service Offer type
+export interface ServiceOffer {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  DeletedAt?: string;
+  ServiceRequestID: number;
+  ProviderID: number;
+  Description: string;
+  ProposedPrice?: number;
+  EstimatedDuration?: string;
+  Status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+  Provider?: User;
+}
+
+// Comment type
+export interface Comment {
+  ID: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+  Content: string;
+  AuthorID: number;
+  Author?: User;
+  PostID?: number;
+  ServiceRequestID?: number;
+  ServiceOfferID?: number;
+  ParentCommentID?: number;
+}
+
 // Auth context type
 export interface AuthContextType {
   user: User | null;
