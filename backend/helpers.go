@@ -12,14 +12,14 @@ import (
 func GenerateSlug(s string) string {
 	// Convert to lowercase
 	s = strings.ToLower(s)
-	
+
 	// Replace spaces and special characters with hyphens
 	reg := regexp.MustCompile("[^a-z0-9]+")
 	s = reg.ReplaceAllString(s, "-")
-	
+
 	// Remove leading and trailing hyphens
 	s = strings.Trim(s, "-")
-	
+
 	return s
 }
 
@@ -27,13 +27,13 @@ func GenerateSlug(s string) string {
 // This will be used to route requests to the correct community
 func GetCommunityByDomain(db *gorm.DB, domain string) (*Community, error) {
 	var community Community
-	
+
 	// Check if it's a custom domain
 	err := db.Where("custom_domain = ? AND is_active = ?", domain, true).First(&community).Error
 	if err == nil {
 		return &community, nil
 	}
-	
+
 	// Check if it's a subdomain (extract subdomain part)
 	// Example: "sunset.commune.com" -> "sunset"
 	parts := strings.Split(domain, ".")
@@ -44,7 +44,7 @@ func GetCommunityByDomain(db *gorm.DB, domain string) (*Community, error) {
 			return &community, nil
 		}
 	}
-	
+
 	return nil, err
 }
 

@@ -25,7 +25,7 @@ func ExampleCreateCommunity(db *gorm.DB, adminID uint) (*Community, error) {
 		ZipCode:     "90001",
 		IsActive:    true,
 	}
-	
+
 	result := db.Create(&community)
 	return &community, result.Error
 }
@@ -39,7 +39,7 @@ func ExampleJoinCommunity(db *gorm.DB, userID, communityID uint) error {
 		JoinedAt:    time.Now(),
 		IsActive:    true,
 	}
-	
+
 	return db.Create(&userCommunity).Error
 }
 
@@ -53,7 +53,7 @@ func ExampleCreatePost(db *gorm.DB, authorID, communityID uint, title, content s
 		IsPublished: true,
 		ViewCount:   0,
 	}
-	
+
 	result := db.Create(&post)
 	return &post, result.Error
 }
@@ -69,7 +69,7 @@ func ExampleCreateServiceRequest(db *gorm.DB, requesterID, communityID uint) (*S
 		Status:      "open",
 		Budget:      200.00,
 	}
-	
+
 	result := db.Create(&request)
 	return &request, result.Error
 }
@@ -84,7 +84,7 @@ func ExampleCreateServiceOffer(db *gorm.DB, providerID, serviceRequestID uint) (
 		EstimatedDuration: "2-3 hours",
 		Status:            "pending",
 	}
-	
+
 	result := db.Create(&offer)
 	return &offer, result.Error
 }
@@ -96,11 +96,11 @@ func ExampleAcceptServiceOffer(db *gorm.DB, requestID, offerID uint) error {
 		"accepted_offer_id": offerID,
 		"status":           "in_progress",
 	}
-	
+
 	if err := db.Model(&ServiceRequest{}).Where("id = ?", requestID).Updates(updates).Error; err != nil {
 		return err
 	}
-	
+
 	// Update offer status
 	return db.Model(&ServiceOffer{}).Where("id = ?", offerID).Update("status", "accepted").Error
 }
@@ -117,7 +117,7 @@ func ExampleCompleteServiceAndRate(db *gorm.DB, requestID, providerID, raterID u
 		}).Error; err != nil {
 			return err
 		}
-		
+
 		// Create rating
 		rating := Rating{
 			ProviderID:       providerID,
@@ -126,7 +126,7 @@ func ExampleCompleteServiceAndRate(db *gorm.DB, requestID, providerID, raterID u
 			Score:            score,
 			Review:           review,
 		}
-		
+
 		return tx.Create(&rating).Error
 	})
 }
@@ -138,7 +138,7 @@ func ExampleAddCommentToPost(db *gorm.DB, authorID, postID uint, content string)
 		AuthorID: authorID,
 		PostID:   &postID,
 	}
-	
+
 	result := db.Create(&comment)
 	return &comment, result.Error
 }
@@ -150,7 +150,7 @@ func ExampleReplyToComment(db *gorm.DB, authorID, parentCommentID uint, content 
 		AuthorID:        authorID,
 		ParentCommentID: &parentCommentID,
 	}
-	
+
 	result := db.Create(&comment)
 	return &comment, result.Error
 }
@@ -162,7 +162,7 @@ func ExampleGetCommunityPosts(db *gorm.DB, communityID uint) ([]Post, error) {
 		Where("community_id = ? AND is_published = ?", communityID, true).
 		Order("created_at DESC").
 		Find(&posts).Error
-	
+
 	return posts, err
 }
 
@@ -173,11 +173,11 @@ func ExampleGetServiceRequestsWithOffers(db *gorm.DB, communityID uint, status s
 		Preload("ServiceOffers.Provider").
 		Preload("Requester").
 		Where("community_id = ?", communityID)
-	
+
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-	
+
 	err := query.Order("created_at DESC").Find(&requests).Error
 	return requests, err
 }
@@ -188,12 +188,12 @@ func ExampleGetProviderAverageRating(db *gorm.DB, providerID uint) (float64, int
 		AvgScore float64
 		Count    int
 	}
-	
+
 	err := db.Model(&Rating{}).
 		Select("AVG(score) as avg_score, COUNT(*) as count").
 		Where("provider_id = ?", providerID).
 		Scan(&result).Error
-	
+
 	return result.AvgScore, result.Count, err
 }
 
@@ -203,7 +203,7 @@ func ExampleGetUserCommunities(db *gorm.DB, userID uint) ([]UserCommunity, error
 	err := db.Preload("Community").
 		Where("user_id = ? AND is_active = ?", userID, true).
 		Find(&userCommunities).Error
-	
+
 	return userCommunities, err
 }
 
@@ -214,7 +214,7 @@ func ExampleSearchServiceRequestsByCategory(db *gorm.DB, communityID uint, categ
 		Where("community_id = ? AND category = ? AND status = ?", communityID, category, "open").
 		Order("created_at DESC").
 		Find(&requests).Error
-	
+
 	return requests, err
 }
 
@@ -227,7 +227,7 @@ func ExampleGetPostWithComments(db *gorm.DB, postID uint) (*Post, error) {
 		Preload("Comments.Replies.Author").
 		Where("id = ?", postID).
 		First(&post).Error
-	
+
 	return &post, err
 }
 
@@ -241,7 +241,7 @@ func ExamplePromoteUserToModerator(db *gorm.DB, userID, communityID uint) error 
 // Example 17: Get all service providers in a community with ratings
 func ExampleGetServiceProvidersWithRatings(db *gorm.DB, communityID uint) ([]User, error) {
 	var providers []User
-	
+
 	err := db.Joins("JOIN user_communities ON user_communities.user_id = users.id").
 		Preload("ReceivedRatings", func(db *gorm.DB) *gorm.DB {
 			return db.Order("created_at DESC").Limit(5)
@@ -249,7 +249,7 @@ func ExampleGetServiceProvidersWithRatings(db *gorm.DB, communityID uint) ([]Use
 		Where("user_communities.community_id = ? AND user_communities.role = ? AND user_communities.is_active = ?",
 			communityID, RoleServiceProvider, true).
 		Find(&providers).Error
-	
+
 	return providers, err
 }
 
@@ -262,9 +262,9 @@ func ExampleGetCommunityActivity(db *gorm.DB, communityID uint, limit int) (inte
 		UserName  string
 		CreatedAt time.Time
 	}
-	
+
 	var activities []Activity
-	
+
 	// Get recent posts
 	var posts []Post
 	db.Preload("Author").
@@ -272,7 +272,7 @@ func ExampleGetCommunityActivity(db *gorm.DB, communityID uint, limit int) (inte
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&posts)
-	
+
 	for _, post := range posts {
 		activities = append(activities, Activity{
 			Type:      "post",
@@ -282,7 +282,7 @@ func ExampleGetCommunityActivity(db *gorm.DB, communityID uint, limit int) (inte
 			CreatedAt: post.CreatedAt,
 		})
 	}
-	
+
 	// Get recent service requests
 	var requests []ServiceRequest
 	db.Preload("Requester").
@@ -290,7 +290,7 @@ func ExampleGetCommunityActivity(db *gorm.DB, communityID uint, limit int) (inte
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&requests)
-	
+
 	for _, req := range requests {
 		activities = append(activities, Activity{
 			Type:      "service_request",
@@ -300,7 +300,7 @@ func ExampleGetCommunityActivity(db *gorm.DB, communityID uint, limit int) (inte
 			CreatedAt: req.CreatedAt,
 		})
 	}
-	
+
 	return activities, nil
 }
 
@@ -311,11 +311,11 @@ func ExampleCancelServiceRequest(db *gorm.DB, requestID, userID uint) error {
 	if err := db.First(&request, requestID).Error; err != nil {
 		return err
 	}
-	
+
 	if request.RequesterID != userID {
 		return fmt.Errorf("unauthorized: only requester can cancel")
 	}
-	
+
 	return db.Model(&ServiceRequest{}).
 		Where("id = ?", requestID).
 		Update("status", "cancelled").Error
@@ -328,11 +328,11 @@ func ExampleDeletePost(db *gorm.DB, postID, authorID uint) error {
 	if err := db.First(&post, postID).Error; err != nil {
 		return err
 	}
-	
+
 	if post.AuthorID != authorID {
 		return fmt.Errorf("unauthorized: only author can delete")
 	}
-	
+
 	// GORM's Delete performs soft delete
 	return db.Delete(&Post{}, postID).Error
 }
@@ -351,7 +351,7 @@ func ExampleCreateCommunityWithCustomDomain(db *gorm.DB) (*Community, error) {
 		Country:      "USA",
 		IsActive:     true,
 	}
-	
+
 	result := db.Create(&community)
 	return &community, result.Error
 }

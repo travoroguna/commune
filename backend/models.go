@@ -25,7 +25,7 @@ type User struct {
 	PasswordHash string `gorm:"not null"`
 	Role         UserRole `gorm:"type:varchar(50);default:'user';not null"`
 	IsActive     bool     `gorm:"default:true;not null"`
-	
+
 	// Relationships
 	Communities     []Community      `gorm:"many2many:user_communities;"`
 	Posts           []Post           `gorm:"foreignKey:AuthorID"`
@@ -43,20 +43,20 @@ type Community struct {
 	Name        string `gorm:"not null"`
 	Slug        string `gorm:"uniqueIndex;not null"` // URL-friendly identifier (e.g., "sunset-apartments")
 	Description string `gorm:"type:text"`
-	
+
 	// Domain configuration for multi-tenancy
 	Subdomain   string `gorm:"uniqueIndex"` // Subdomain for community (e.g., "sunset" -> sunset.commune.com)
 	CustomDomain string `gorm:"uniqueIndex"` // Custom domain (e.g., "sunset-apts.com")
-	
+
 	// Location information
 	Address     string
 	City        string
 	State       string
 	Country     string
 	ZipCode     string
-	
+
 	IsActive    bool   `gorm:"default:true;not null"`
-	
+
 	// Relationships
 	Users           []User           `gorm:"many2many:user_communities;"`
 	Posts           []Post           `gorm:"foreignKey:CommunityID"`
@@ -71,7 +71,7 @@ type UserCommunity struct {
 	Role        UserRole  `gorm:"type:varchar(50);default:'user';not null"`
 	JoinedAt    time.Time `gorm:"autoCreateTime"`
 	IsActive    bool      `gorm:"default:true;not null"`
-	
+
 	// Foreign keys
 	User      User      `gorm:"foreignKey:UserID"`
 	Community Community `gorm:"foreignKey:CommunityID"`
@@ -86,7 +86,7 @@ type Post struct {
 	CommunityID uint   `gorm:"not null;index"`
 	IsPublished bool   `gorm:"default:true;not null"`
 	ViewCount   int    `gorm:"default:0"`
-	
+
 	// Relationships
 	Author    User      `gorm:"foreignKey:AuthorID"`
 	Community Community `gorm:"foreignKey:CommunityID"`
@@ -108,7 +108,7 @@ type ServiceRequest struct {
 	Budget         float64
 	AcceptedOfferID *uint  `gorm:"index"` // References ServiceOffer.ID - nullable until offer is accepted
 	CompletedAt    *time.Time
-	
+
 	// Relationships
 	Requester      User           `gorm:"foreignKey:RequesterID"`
 	Community      Community      `gorm:"foreignKey:CommunityID"`
@@ -126,7 +126,7 @@ type ServiceOffer struct {
 	ProposedPrice    float64
 	EstimatedDuration string
 	Status           string `gorm:"type:varchar(50);default:'pending';not null"` // pending, accepted, rejected, withdrawn
-	
+
 	// Relationships
 	ServiceRequest ServiceRequest `gorm:"foreignKey:ServiceRequestID"`
 	Provider       User           `gorm:"foreignKey:ProviderID"`
@@ -142,7 +142,7 @@ type Comment struct {
 	ServiceRequestID *uint  `gorm:"index"`
 	ServiceOfferID   *uint  `gorm:"index"`
 	ParentCommentID  *uint  `gorm:"index"` // For nested comments/replies
-	
+
 	// Relationships
 	Author         User            `gorm:"foreignKey:AuthorID"`
 	Post           *Post           `gorm:"foreignKey:PostID"`
@@ -160,7 +160,7 @@ type Rating struct {
 	ServiceRequestID uint   `gorm:"not null;index"`
 	Score            int    `gorm:"not null;check:score >= 1 AND score <= 5"` // 1-5 stars with database constraint
 	Review           string `gorm:"type:text"`
-	
+
 	// Relationships
 	Provider       User           `gorm:"foreignKey:ProviderID"`
 	Rater          User           `gorm:"foreignKey:RaterID"`
