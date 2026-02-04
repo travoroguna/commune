@@ -37,12 +37,10 @@ COPY backend/ ./
 RUN CGO_ENABLED=1 GOOS=linux go build -o commune .
 
 # Stage 3: Final runtime image
-FROM alpine:latest
+# Use golang:alpine since we need CGO libraries for SQLite
+FROM golang:1.24-alpine
 
 WORKDIR /app
-
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
 
 # Copy backend binary from builder
 COPY --from=backend-builder /app/commune .
