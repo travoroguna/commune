@@ -40,7 +40,7 @@ function UsersListPage() {
           <h1 className="text-3xl font-bold">Users</h1>
           <p className="text-slate-600 mt-1">Manage user accounts</p>
         </div>
-        <Link to="/users/new">
+        <Link to="/_authenticated/users/new">
           <Button>
             <UserPlus className="mr-2 h-4 w-4" />
             Create User
@@ -67,7 +67,7 @@ function UsersListPage() {
               {users.map((u) => (
                 <Link
                   key={u.ID}
-                  to="/users/$userId"
+                  to="/_authenticated/users/$userId"
                   params={{ userId: u.ID.toString() }}
                   className="grid grid-cols-4 py-3 hover:bg-slate-50 rounded-lg px-2 -mx-2 transition-colors"
                 >

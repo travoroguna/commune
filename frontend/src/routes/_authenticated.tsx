@@ -38,14 +38,14 @@ function AuthenticatedLayout() {
 
               <nav className="flex space-x-4">
                 <Link
-                  to="/"
+                  to="/_authenticated/dashboard"
                   className="text-sm font-medium text-slate-600 hover:text-slate-900"
                 >
                   Dashboard
                 </Link>
                 {canManageUsers && (
                   <Link
-                    to="/users"
+                    to="/_authenticated/users"
                     className="text-sm font-medium text-slate-600 hover:text-slate-900"
                   >
                     Users
@@ -53,7 +53,7 @@ function AuthenticatedLayout() {
                 )}
                 {user.Role === 'super_admin' && (
                   <Link
-                    to="/communities"
+                    to="/_authenticated/communities"
                     className="text-sm font-medium text-slate-600 hover:text-slate-900"
                   >
                     Communities
@@ -116,7 +116,7 @@ function AuthenticatedLayout() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link to="/profile" className="flex items-center gap-2">
+                    <Link to="/_authenticated/profile" className="flex items-center gap-2">
                       <Settings className="h-4 w-4" />
                       Profile Settings
                     </Link>

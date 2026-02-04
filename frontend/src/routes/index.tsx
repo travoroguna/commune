@@ -7,7 +7,7 @@ export const Route = createFileRoute('/')({
       const response = await fetch('/api/auth/me', { credentials: 'include' });
       if (response.ok) {
         // User is authenticated, redirect to dashboard
-        throw redirect({ to: '/_authenticated' });
+        throw redirect({ to: '/_authenticated/dashboard' });
       }
     } catch (err) {
       // If error is a redirect, rethrow it

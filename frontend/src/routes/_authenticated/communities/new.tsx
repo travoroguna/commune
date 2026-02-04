@@ -41,7 +41,7 @@ function CreateCommunityPage() {
     mutationFn: communityApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['communities'] });
-      navigate({ to: '/communities' });
+      navigate({ to: '/_authenticated/communities' });
     },
     onError: (err: Error) => {
       setError(err.message);
@@ -203,7 +203,7 @@ function CreateCommunityPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => navigate({ to: '/communities' })}
+                onClick={() => navigate({ to: '/_authenticated/communities' })}
                 disabled={createCommunityMutation.isPending}
               >
                 Cancel

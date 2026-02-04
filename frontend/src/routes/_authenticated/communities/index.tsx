@@ -38,7 +38,7 @@ function CommunitiesListPage() {
           <h1 className="text-3xl font-bold">Communities</h1>
           <p className="text-slate-600 mt-1">Manage all communities</p>
         </div>
-        <Link to="/communities/new">
+        <Link to="/_authenticated/communities/new">
           <Button>
             <Building2 className="mr-2 h-4 w-4" />
             Create Community
@@ -59,7 +59,7 @@ function CommunitiesListPage() {
               {communities.map((community) => (
                 <Link
                   key={community.ID}
-                  to="/communities/$communityId"
+                  to="/_authenticated/communities/$communityId"
                   params={{ communityId: community.ID.toString() }}
                 >
                   <Card className="hover:shadow-md transition-shadow cursor-pointer">

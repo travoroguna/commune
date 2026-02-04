@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Users, Building2, UserPlus, Mail } from 'lucide-react';
 
-export const Route = createFileRoute('/_authenticated/')({
+export const Route = createFileRoute('/_authenticated/dashboard')({
   component: DashboardPage,
 });
 
@@ -67,7 +67,7 @@ function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {canManageUsers && (
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <Link to="/users/new">
+              <Link to="/_authenticated/users/new">
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <UserPlus className="h-8 w-8 text-blue-600" />
@@ -83,7 +83,7 @@ function DashboardPage() {
 
           {user?.Role === 'super_admin' && (
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <Link to="/communities/new">
+              <Link to="/_authenticated/communities/new">
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <Building2 className="h-8 w-8 text-green-600" />
@@ -99,7 +99,7 @@ function DashboardPage() {
 
           {canManageUsers && (
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <Link to="/join-requests">
+              <Link to="/_authenticated/join-requests">
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <Mail className="h-8 w-8 text-purple-600" />
@@ -114,7 +114,7 @@ function DashboardPage() {
           )}
 
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <Link to="/profile">
+            <Link to="/_authenticated/profile">
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <Users className="h-8 w-8 text-orange-600" />
