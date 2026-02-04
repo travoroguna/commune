@@ -88,6 +88,7 @@ func clearAuthCookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   os.Getenv("MODE") == "production",
 		MaxAge:   -1,
 	})
 }
