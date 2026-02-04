@@ -166,3 +166,16 @@ type Rating struct {
 	Rater          User           `gorm:"foreignKey:RaterID"`
 	ServiceRequest ServiceRequest `gorm:"foreignKey:ServiceRequestID"`
 }
+
+// JoinRequest represents a request to join a community
+type JoinRequest struct {
+	gorm.Model
+	UserID      uint   `gorm:"not null;index"`
+	CommunityID uint   `gorm:"not null;index"`
+	Status      string `gorm:"type:varchar(50);default:'pending';not null;index"` // pending, approved, rejected
+	Message     string `gorm:"type:text"`
+
+	// Relationships
+	User      User      `gorm:"foreignKey:UserID"`
+	Community Community `gorm:"foreignKey:CommunityID"`
+}
