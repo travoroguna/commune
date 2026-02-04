@@ -152,7 +152,7 @@ function ServiceRequestDetailPage() {
 
   const isRequester = user?.ID === serviceRequest.RequesterID;
   const canCreateOffer = !isRequester && serviceRequest.Status === 'open';
-  const hasAcceptedOffer = serviceRequest.AcceptedOfferID !== undefined && serviceRequest.AcceptedOfferID !== null;
+  const hasAcceptedOffer = serviceRequest.AcceptedOfferID != null;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
