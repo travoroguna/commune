@@ -6,6 +6,7 @@ This is the Go backend for the Community Marketplace application, built with GOR
 
 The application uses a comprehensive database schema designed to support:
 - **Multi-community support**: Users can join and participate in multiple communities
+- **Domain isolation**: Each community can have its own subdomain or custom domain
 - **User roles**: Super admins, admins, moderators, service providers, and regular users
 - **Content posting**: Users can post content within their communities
 - **Service marketplace**: Request and offer services within communities
@@ -19,7 +20,7 @@ For detailed database documentation, see [DATABASE.md](./DATABASE.md).
 ### Core Entities
 
 1. **User**: Authentication and user profile with role-based access
-2. **Community**: Physical communities (apartments, estates, etc.)
+2. **Community**: Physical communities with domain isolation support (subdomain, custom domain, slug)
 3. **UserCommunity**: Many-to-many relationship with community-specific roles
 4. **Post**: Content posted within communities
 5. **ServiceRequest**: Service requests from community members
@@ -53,6 +54,48 @@ For detailed database documentation, see [DATABASE.md](./DATABASE.md).
                                               ┌──────────┐
                                               │  Rating  │
                                               └──────────┘
+```
+
+## Community Domain Isolation
+
+Each community lives in its own space with three access methods:
+
+### 1. Subdomain Routing
+Communities can be accessed via subdomains:
+- `sunset.commune.com`
+- `tower-plaza.commune.com`
+- `lakeside-villas.commune.com`
+
+### 2. Custom Domain
+Communities can have their own custom domains:
+- `sunsetapts.com`
+- `towerplaza.com`
+- `lakesidevillas.com`
+
+### 3. Slug-based URLs
+For shared domain access:
+- `commune.com/c/sunset-apartments`
+- `commune.com/c/tower-plaza`
+- `commune.com/c/lakeside-villas`
+
+### Implementation
+Use the `GetCommunityByDomain()` helper function in middleware to route requests to the correct community:
+
+```go
+func CommunityMiddleware(db *gorm.DB) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            domain := r.Host
+            community, err := GetCommunityByDomain(db, domain)
+            if err != nil {
+                // Handle error or fallback to slug-based routing
+            }
+            // Add community to context
+            ctx := context.WithValue(r.Context(), "community", community)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
+}
 ```
 
 ## User Roles

@@ -56,6 +56,7 @@ Stores all user accounts with authentication and role information.
 
 ### Communities
 Represents physical communities like apartment complexes or estates.
+**Each community lives in its own space and can have its own domain.**
 
 **Columns:**
 - `id` (PK): Auto-incrementing primary key
@@ -63,7 +64,10 @@ Represents physical communities like apartment complexes or estates.
 - `updated_at`: Timestamp of last update
 - `deleted_at`: Soft delete timestamp
 - `name`: Community name (required)
+- `slug`: URL-friendly identifier (required, unique) - e.g., "sunset-apartments"
 - `description`: Detailed description (text)
+- `subdomain`: Subdomain for the community (unique) - e.g., "sunset" → sunset.commune.com
+- `custom_domain`: Custom domain for the community (unique) - e.g., "sunset-apts.com"
 - `address`: Street address
 - `city`: City name
 - `state`: State/Province
@@ -77,7 +81,16 @@ Represents physical communities like apartment complexes or estates.
 - Has many ServiceRequests
 
 **Indexes:**
+- Unique index on `slug`
+- Unique index on `subdomain`
+- Unique index on `custom_domain`
 - Index on `deleted_at` (for soft deletes)
+
+**Domain Isolation:**
+Communities can be accessed via:
+1. **Subdomain**: `sunset.commune.com` (subdomain field)
+2. **Custom Domain**: `sunset-apts.com` (custom_domain field)
+3. **Slug-based URL**: `commune.com/c/sunset-apartments` (slug field)
 
 ### UserCommunities
 Junction table for many-to-many relationship between Users and Communities with additional metadata.
@@ -252,8 +265,20 @@ Ratings and reviews for service providers after service completion.
 
 ## Key Features
 
-### Multi-Community Support
+### ✅ Multi-Community Support
 Users can join multiple communities through the UserCommunities junction table. Each membership can have a different role specific to that community.
+
+**Domain Isolation:**
+Each community lives in its own space and can be accessed via:
+- **Subdomain routing**: `sunset.commune.com`, `tower-plaza.commune.com`
+- **Custom domains**: `sunset-apts.com`, `towerplaza.com`
+- **Slug-based URLs**: `commune.com/c/sunset-apartments`
+
+This architecture enables:
+- Multi-tenant SaaS model
+- White-label solutions for communities
+- SEO optimization per community
+- Future scalability to separate databases per community
 
 ### Service Marketplace
 - Users can post service requests within their communities

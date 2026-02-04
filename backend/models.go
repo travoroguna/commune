@@ -37,15 +37,24 @@ type User struct {
 }
 
 // Community represents a community (e.g., apartment complex, estate)
+// Each community lives in its own space and can have its own domain
 type Community struct {
 	gorm.Model
 	Name        string `gorm:"not null"`
+	Slug        string `gorm:"uniqueIndex;not null"` // URL-friendly identifier (e.g., "sunset-apartments")
 	Description string `gorm:"type:text"`
+	
+	// Domain configuration for multi-tenancy
+	Subdomain   string `gorm:"uniqueIndex"` // Subdomain for community (e.g., "sunset" -> sunset.commune.com)
+	CustomDomain string `gorm:"uniqueIndex"` // Custom domain (e.g., "sunset-apts.com")
+	
+	// Location information
 	Address     string
 	City        string
 	State       string
 	Country     string
 	ZipCode     string
+	
 	IsActive    bool   `gorm:"default:true;not null"`
 	
 	// Relationships
