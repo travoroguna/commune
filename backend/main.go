@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	gormigrate "github.com/go-gormigrate/gormigrate/v2"
 	"github.com/olivere/vite"
@@ -38,7 +39,22 @@ func main() {
 
 	// API routes
 	mux.HandleFunc("/api/health", healthHandler)
-	mux.HandleFunc("/api/users", usersHandler(db))
+
+	// Auth routes
+	mux.HandleFunc("/api/auth/login", loginHandler(db))
+	mux.HandleFunc("/api/auth/logout", logoutHandler())
+	mux.HandleFunc("/api/auth/me", getCurrentUserHandler(db))
+	mux.HandleFunc("/api/auth/first-boot", checkFirstBootHandler(db))
+	mux.HandleFunc("/api/auth/setup-super-user", setupSuperUserHandler(db))
+
+	// User routes - need router to handle different methods and paths
+	setupUserRoutes(mux, db)
+
+	// Community routes
+	setupCommunityRoutes(mux, db)
+
+	// Join request routes
+	setupJoinRequestRoutes(mux, db)
 
 	// Vite integration for serving frontend
 	var viteHandler *vite.Handler
@@ -111,10 +127,12 @@ func runMigrations(db *gorm.DB) error {
 					&ServiceOffer{},
 					&Comment{},
 					&Rating{},
+					&JoinRequest{},
 				)
 			},
 			Rollback: func(tx *gorm.DB) error {
 				return tx.Migrator().DropTable(
+					"join_requests",
 					"ratings",
 					"comments",
 					"service_offers",
@@ -166,23 +184,130 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-func usersHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		if r.Method == http.MethodGet {
-			var users []User
-			if err := db.Find(&users).Error; err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(`{"error":"Failed to fetch users"}`))
-				return
-			}
-
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"users":[]}`))
-		} else {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			w.Write([]byte(`{"error":"Method not allowed"}`))
+// Route setup functions
+func setupUserRoutes(mux *http.ServeMux, db *gorm.DB) {
+	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getUsersHandler(db)(w, r)
+		case http.MethodPost:
+			createUserHandler(db)(w, r)
+		default:
+			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
+
+	mux.HandleFunc("/api/users/change-password", changePasswordHandler(db))
+
+	// Handle /api/users/{id} and /api/users/{id}/communities
+	mux.HandleFunc("/api/users/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Check if it's /api/users/{id}/communities
+		if strings.Contains(path, "/communities") {
+			getUserCommunitiesHandler(db)(w, r)
+			return
+		}
+
+		// Otherwise it's /api/users/{id}
+		switch r.Method {
+		case http.MethodGet:
+			getUserByIDHandler(db)(w, r)
+		case http.MethodPut:
+			updateUserHandler(db)(w, r)
+		case http.MethodDelete:
+			deleteUserHandler(db)(w, r)
+		default:
+			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func setupCommunityRoutes(mux *http.ServeMux, db *gorm.DB) {
+	mux.HandleFunc("/api/communities", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getCommunitiesHandler(db)(w, r)
+		case http.MethodPost:
+			createCommunityHandler(db)(w, r)
+		default:
+			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Handle /api/communities/{id}, /api/communities/{id}/members, /api/communities/{id}/join-requests
+	mux.HandleFunc("/api/communities/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Check if it's join-requests endpoint
+		if strings.Contains(path, "/join-requests") {
+			getCommunityJoinRequestsHandler(db)(w, r)
+			return
+		}
+
+		// Check if it's members endpoint
+		if strings.Contains(path, "/members") {
+			parts := strings.Split(strings.TrimPrefix(path, "/api/communities/"), "/")
+			if len(parts) >= 3 {
+				// /api/communities/{id}/members/{userId}
+				switch r.Method {
+				case http.MethodDelete:
+					removeCommunityMemberHandler(db)(w, r)
+				case http.MethodPut:
+					updateCommunityMemberRoleHandler(db)(w, r)
+				default:
+					writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			} else {
+				// /api/communities/{id}/members
+				switch r.Method {
+				case http.MethodGet:
+					getCommunityMembersHandler(db)(w, r)
+				case http.MethodPost:
+					addCommunityMemberHandler(db)(w, r)
+				default:
+					writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			}
+			return
+		}
+
+		// Otherwise it's /api/communities/{id}
+		switch r.Method {
+		case http.MethodGet:
+			getCommunityByIDHandler(db)(w, r)
+		case http.MethodPut:
+			updateCommunityHandler(db)(w, r)
+		case http.MethodDelete:
+			deleteCommunityHandler(db)(w, r)
+		default:
+			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func setupJoinRequestRoutes(mux *http.ServeMux, db *gorm.DB) {
+	mux.HandleFunc("/api/join-requests", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getJoinRequestsHandler(db)(w, r)
+		case http.MethodPost:
+			createJoinRequestHandler(db)(w, r)
+		default:
+			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Handle /api/join-requests/{id}/approve and /api/join-requests/{id}/reject
+	mux.HandleFunc("/api/join-requests/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		if strings.HasSuffix(path, "/approve") {
+			approveJoinRequestHandler(db)(w, r)
+		} else if strings.HasSuffix(path, "/reject") {
+			rejectJoinRequestHandler(db)(w, r)
+		} else {
+			writeError(w, "Not found", http.StatusNotFound)
+		}
+	})
 }
