@@ -12,12 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Example User model
-type User struct {
-	gorm.Model
-	Name  string
-	Email string `gorm:"uniqueIndex"`
-}
+// Note: Models are now defined in models.go
 
 func main() {
 	// Initialize database
@@ -90,10 +85,44 @@ func runMigrations(db *gorm.DB) error {
 		{
 			ID: "202402041300",
 			Migrate: func(tx *gorm.DB) error {
-				return tx.AutoMigrate(&User{})
+				// Initial User table (legacy, kept for backwards compatibility)
+				type OldUser struct {
+					gorm.Model
+					Name  string
+					Email string `gorm:"uniqueIndex"`
+				}
+				return tx.AutoMigrate(&OldUser{})
 			},
 			Rollback: func(tx *gorm.DB) error {
 				return tx.Migrator().DropTable("users")
+			},
+		},
+		{
+			ID: "202402041301",
+			Migrate: func(tx *gorm.DB) error {
+				// Create all new tables for the community marketplace
+				return tx.AutoMigrate(
+					&User{},
+					&Community{},
+					&UserCommunity{},
+					&Post{},
+					&ServiceRequest{},
+					&ServiceOffer{},
+					&Comment{},
+					&Rating{},
+				)
+			},
+			Rollback: func(tx *gorm.DB) error {
+				return tx.Migrator().DropTable(
+					"ratings",
+					"comments",
+					"service_offers",
+					"service_requests",
+					"posts",
+					"user_communities",
+					"communities",
+					"users",
+				)
 			},
 		},
 	})
