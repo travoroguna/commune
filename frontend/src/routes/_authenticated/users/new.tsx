@@ -45,7 +45,7 @@ function CreateUserPage() {
     mutationFn: userApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      navigate({ to: '/_authenticated/users' });
+      navigate({ to: '/users' });
     },
     onError: (err: Error) => {
       setError(err.message);
@@ -165,7 +165,7 @@ function CreateUserPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => navigate({ to: '/_authenticated/users' })}
+                onClick={() => navigate({ to: '/users' })}
                 disabled={createUserMutation.isPending}
               >
                 Cancel
