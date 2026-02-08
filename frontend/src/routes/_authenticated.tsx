@@ -49,6 +49,20 @@ function AuthenticatedLayout() {
                 >
                   Services
                 </Link>
+                <Link
+                  to="/service-requests"
+                  className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                >
+                  Service Requests
+                </Link>
+                {(user.Role === 'service_provider' || user.Role === 'super_admin' || user.Role === 'admin') && (
+                  <Link
+                    to="/service-provider/dashboard"
+                    className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    Provider Dashboard
+                  </Link>
+                )}
                 {canManageUsers && (
                   <Link
                     to="/users"

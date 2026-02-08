@@ -55,6 +55,29 @@ export interface JoinRequest {
   Community?: Community;
 }
 
+// Service status type
+export type ServiceStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+// Service request status type (alias for ServiceStatus)
+export type ServiceRequestStatus = ServiceStatus;
+
+// Service offer status type
+export type ServiceOfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+
+// Common service categories
+export type ServiceCategory = 
+  | 'Plumbing' 
+  | 'Electrical' 
+  | 'Cleaning' 
+  | 'HVAC' 
+  | 'Painting' 
+  | 'Security' 
+  | 'Appliance Repair' 
+  | 'Pest Control'
+  | 'Landscaping'
+  | 'Carpentry'
+  | 'Other';
+
 // Service Request type
 export interface ServiceRequest {
   ID: number;
@@ -63,6 +86,7 @@ export interface ServiceRequest {
   DeletedAt?: string;
   Title: string;
   Description: string;
+  Category?: ServiceCategory | string;
   Category?: ServiceCategory;
   RequesterID: number;
   CommunityID: number;
@@ -73,6 +97,10 @@ export interface ServiceRequest {
   Requester?: User;
   Community?: Community;
   ServiceOffers?: ServiceOffer[];
+  AcceptedOffer?: ServiceOffer;
+  Comments?: Comment[];
+}
+
   Comments?: Comment[];
 }
 
@@ -104,6 +132,8 @@ export interface ServiceOffer {
   Description: string;
   ProposedPrice?: number;
   EstimatedDuration?: string;
+  Status: ServiceOfferStatus;
+  ServiceRequest?: ServiceRequest;
   Status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   Provider?: User;
 }

@@ -56,6 +56,12 @@ func main() {
 	// Join request routes
 	setupJoinRequestRoutes(mux, db)
 
+	// Service routes (simple services page)
+	setupServiceRoutes(mux, db)
+
+	// Service request and offer routes (marketplace)
+	setupServiceRequestRoutes(mux, db)
+
 	// Service routes
 	setupServiceRoutes(mux, db)
 

@@ -128,6 +128,36 @@ function DashboardPage() {
           </Card>
 
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <Link to="/service-requests">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Users className="h-8 w-8 text-blue-600" />
+                  <div>
+                    <CardTitle>Service Requests</CardTitle>
+                    <CardDescription>Browse and create service requests</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+            </Link>
+          </Card>
+
+          {(user?.Role === 'service_provider' || user?.Role === 'super_admin' || user?.Role === 'admin') && (
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Link to="/service-provider/dashboard">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Building2 className="h-8 w-8 text-teal-600" />
+                    <div>
+                      <CardTitle>Provider Dashboard</CardTitle>
+                      <CardDescription>View requests and manage offers</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+              </Link>
+            </Card>
+          )}
+
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <Link to="/profile">
               <CardHeader>
                 <div className="flex items-center gap-3">
