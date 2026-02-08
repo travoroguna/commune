@@ -62,6 +62,9 @@ func main() {
 	// Service request and offer routes (marketplace)
 	setupServiceRequestRoutes(mux, db)
 
+	// Service routes
+	setupServiceRoutes(mux, db)
+
 	// Vite integration for serving frontend
 	var viteHandler *vite.Handler
 	if mode == "production" {
