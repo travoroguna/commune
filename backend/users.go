@@ -1,26 +1,25 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // User handlers
 
-func getUsersHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getUsersHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
 		var users []User
 		if err := db.Where("deleted_at IS NULL").Find(&users).Error; err != nil {
-			writeError(w, "Failed to fetch users", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch users"})
 			return
 		}
 
@@ -29,42 +28,41 @@ func getUsersHandler(db *gorm.DB) http.HandlerFunc {
 			result[i] = sanitizeUser(&user)
 		}
 
-		writeJSON(w, result, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, result)
+	}
 }
 
-func getUserByIDHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getUserByIDHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/users/")
-		id, err := strconv.ParseUint(idStr, 10, 32)
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
 		var user User
 		if err := db.First(&user, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "User not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			} else {
-				writeError(w, "Failed to fetch user", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch user"})
 			}
 			return
 		}
 
-		writeJSON(w, sanitizeUser(&user), http.StatusOK)
-	})
+		c.JSON(http.StatusOK, sanitizeUser(&user))
+	}
 }
 
-func createUserHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func createUserHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
@@ -75,13 +73,13 @@ func createUserHandler(db *gorm.DB) http.HandlerFunc {
 			Role     UserRole `json:"role"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.Name == "" || req.Email == "" || req.Password == "" {
-			writeError(w, "Name, email and password are required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Name, email and password are required"})
 			return
 		}
 
@@ -92,13 +90,13 @@ func createUserHandler(db *gorm.DB) http.HandlerFunc {
 		// Check if user already exists
 		var existingUser User
 		if err := db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
-			writeError(w, "User with this email already exists", http.StatusConflict)
+			c.JSON(http.StatusConflict, gin.H{"message": "User with this email already exists"})
 			return
 		}
 
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
-			writeError(w, "Failed to hash password", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
 			return
 		}
 
@@ -111,61 +109,60 @@ func createUserHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Create(&user).Error; err != nil {
-			writeError(w, "Failed to create user", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
 			return
 		}
 
-		writeJSON(w, sanitizeUser(&user), http.StatusCreated)
-	})
+		c.JSON(http.StatusCreated, sanitizeUser(&user))
+	}
 }
 
-func updateUserHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func updateUserHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/users/")
-		id, err := strconv.ParseUint(idStr, 10, 32)
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
-		currentUserID, err := getCurrentUser(r)
+		currentUserID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
 		var user User
 		if err := db.First(&user, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "User not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			} else {
-				writeError(w, "Failed to fetch user", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch user"})
 			}
 			return
 		}
 
 		var req map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
-		currentUserRole := UserRole(r.Header.Get("X-User-Role"))
+		currentUserRole, _ := c.Get("userRole")
 
 		// Check permissions
 		if uint(id) != currentUserID && currentUserRole != RoleSuperAdmin && currentUserRole != RoleAdmin {
-			writeError(w, "Insufficient permissions", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "Insufficient permissions"})
 			return
 		}
 
 		// Only admins can change roles
 		if _, hasRole := req["Role"]; hasRole && currentUserRole != RoleSuperAdmin && currentUserRole != RoleAdmin {
-			writeError(w, "Only admins can change user roles", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "Only admins can change user roles"})
 			return
 		}
 
@@ -185,65 +182,64 @@ func updateUserHandler(db *gorm.DB) http.HandlerFunc {
 
 		if len(updates) > 0 {
 			if err := db.Model(&user).Updates(updates).Error; err != nil {
-				writeError(w, "Failed to update user", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update user"})
 				return
 			}
 		}
 
 		// Fetch updated user
 		if err := db.First(&user, id).Error; err != nil {
-			writeError(w, "Failed to fetch updated user", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch updated user"})
 			return
 		}
 
-		writeJSON(w, sanitizeUser(&user), http.StatusOK)
-	})
+		c.JSON(http.StatusOK, sanitizeUser(&user))
+	}
 }
 
-func deleteUserHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func deleteUserHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/users/")
-		id, err := strconv.ParseUint(idStr, 10, 32)
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
 		var user User
 		if err := db.First(&user, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "User not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			} else {
-				writeError(w, "Failed to fetch user", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch user"})
 			}
 			return
 		}
 
 		// Soft delete
 		if err := db.Delete(&user).Error; err != nil {
-			writeError(w, "Failed to delete user", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete user"})
 			return
 		}
 
-		writeJSON(w, map[string]interface{}{"message": "User deleted successfully"}, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	}
 }
 
-func changePasswordHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func changePasswordHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		userID, err := getCurrentUser(r)
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
@@ -252,67 +248,61 @@ func changePasswordHandler(db *gorm.DB) http.HandlerFunc {
 			NewPassword string `json:"newPassword"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.OldPassword == "" || req.NewPassword == "" {
-			writeError(w, "Old password and new password are required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Old password and new password are required"})
 			return
 		}
 
 		var user User
 		if err := db.First(&user, userID).Error; err != nil {
-			writeError(w, "User not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			return
 		}
 
 		if !checkPasswordHash(req.OldPassword, user.PasswordHash) {
-			writeError(w, "Old password is incorrect", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Old password is incorrect"})
 			return
 		}
 
 		passwordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
-			writeError(w, "Failed to hash password", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
 			return
 		}
 
 		if err := db.Model(&user).Update("password_hash", passwordHash).Error; err != nil {
-			writeError(w, "Failed to update password", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update password"})
 			return
 		}
 
-		writeJSON(w, map[string]interface{}{"message": "Password changed successfully"}, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+	}
 }
 
-func getUserCommunitiesHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getUserCommunitiesHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/users/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		id, err := strconv.ParseUint(parts[0], 10, 32)
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
 		var userCommunities []UserCommunity
 		if err := db.Preload("Community").Where("user_id = ? AND is_active = ?", id, true).Find(&userCommunities).Error; err != nil {
-			writeError(w, "Failed to fetch user communities", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch user communities"})
 			return
 		}
 
-		writeJSON(w, userCommunities, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, userCommunities)
+	}
 }

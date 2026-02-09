@@ -1,53 +1,24 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// setupServiceRoutes sets up all service-related routes
-func setupServiceRoutes(mux *http.ServeMux, db *gorm.DB) {
-	mux.HandleFunc("/api/services", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getServicesHandler(db)(w, r)
-		case http.MethodPost:
-			createServiceRequestHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Handle /api/services/{id}
-	mux.HandleFunc("/api/services/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getServiceByIDHandler(db)(w, r)
-		case http.MethodPut:
-			updateServiceRequestHandler(db)(w, r)
-		case http.MethodDelete:
-			deleteServiceRequestHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-}
-
 // getServicesHandler handles GET /api/services with filters
-func getServicesHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func getServicesHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		query := db.Model(&ServiceRequest{})
 
 		// Parse query parameters for filtering
-		category := r.URL.Query().Get("category")
-		status := r.URL.Query().Get("status")
-		communityID := r.URL.Query().Get("community_id")
-		search := r.URL.Query().Get("search")
+		category := c.Query("category")
+		status := c.Query("status")
+		communityID := c.Query("community_id")
+		search := c.Query("search")
 
 		// Apply filters
 		if category != "" {
@@ -72,22 +43,21 @@ func getServicesHandler(db *gorm.DB) http.HandlerFunc {
 			Preload("ServiceOffers").
 			Order("created_at DESC").
 			Find(&services).Error; err != nil {
-			writeError(w, "Failed to fetch services", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch services"})
 			return
 		}
 
-		writeJSON(w, services, http.StatusOK)
+		c.JSON(http.StatusOK, services)
 	}
 }
 
 // getServiceByIDHandler handles GET /api/services/{id}
-func getServiceByIDHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract ID from path
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/services/")
+func getServiceByIDHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid service ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service ID"})
 			return
 		}
 
@@ -101,14 +71,14 @@ func getServiceByIDHandler(db *gorm.DB) http.HandlerFunc {
 			Preload("Comments.Author").
 			First(&service, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Service not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Service not found"})
 				return
 			}
-			writeError(w, "Failed to fetch service", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service"})
 			return
 		}
 
-		writeJSON(w, service, http.StatusOK)
+		c.JSON(http.StatusOK, service)
 	}
 }
 
@@ -122,24 +92,23 @@ type CreateServiceRequestInput struct {
 }
 
 // createServiceRequestHandler handles POST /api/services
-func createServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Get current user from session
-		userID, err := getCurrentUser(r)
+func createServiceRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
 		var input CreateServiceRequestInput
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		// Validate required fields
 		if input.Title == "" || input.Description == "" || input.CommunityID == 0 {
-			writeError(w, "Title, description, and community_id are required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Title, description, and community_id are required"})
 			return
 		}
 
@@ -155,14 +124,14 @@ func createServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Create(&service).Error; err != nil {
-			writeError(w, "Failed to create service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create service request"})
 			return
 		}
 
 		// Load relationships
 		db.Preload("Requester").Preload("Community").First(&service, service.ID)
 
-		writeJSON(w, service, http.StatusCreated)
+		c.JSON(http.StatusCreated, service)
 	}
 }
 
@@ -176,27 +145,25 @@ type UpdateServiceRequestInput struct {
 }
 
 // updateServiceRequestHandler handles PUT /api/services/{id}
-func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Get current user from session
-		userID, err := getCurrentUser(r)
+func updateServiceRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
 		// Fetch current user to check role
 		var currentUser User
 		if err := db.First(&currentUser, userID).Error; err != nil {
-			writeError(w, "User not found", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "User not found"})
 			return
 		}
 
-		// Extract ID from path
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/services/")
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid service ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service ID"})
 			return
 		}
 
@@ -204,22 +171,22 @@ func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 		var service ServiceRequest
 		if err := db.First(&service, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Service not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Service not found"})
 				return
 			}
-			writeError(w, "Failed to fetch service", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service"})
 			return
 		}
 
 		// Check authorization (only requester or admin can update)
 		if service.RequesterID != userID && currentUser.Role != RoleSuperAdmin && currentUser.Role != RoleAdmin {
-			writeError(w, "Forbidden", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "Forbidden"})
 			return
 		}
 
 		var input UpdateServiceRequestInput
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
@@ -243,13 +210,13 @@ func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 				"completed":   {}, // Cannot transition from completed
 				"cancelled":   {}, // Cannot transition from cancelled
 			}
-			
+
 			allowedNextStates, exists := validTransitions[service.Status]
 			if !exists {
-				writeError(w, "Invalid current status", http.StatusBadRequest)
+				c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid current status"})
 				return
 			}
-			
+
 			// Check if transition is valid
 			validTransition := false
 			for _, allowed := range allowedNextStates {
@@ -258,12 +225,12 @@ func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 					break
 				}
 			}
-			
+
 			if !validTransition && newStatus != service.Status {
-				writeError(w, fmt.Sprintf("Invalid status transition from %s to %s", service.Status, newStatus), http.StatusBadRequest)
+				c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("Invalid status transition from %s to %s", service.Status, newStatus)})
 				return
 			}
-			
+
 			service.Status = newStatus
 		}
 		if input.Budget != nil {
@@ -271,39 +238,37 @@ func updateServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Save(&service).Error; err != nil {
-			writeError(w, "Failed to update service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update service request"})
 			return
 		}
 
 		// Load relationships
 		db.Preload("Requester").Preload("Community").First(&service, service.ID)
 
-		writeJSON(w, service, http.StatusOK)
+		c.JSON(http.StatusOK, service)
 	}
 }
 
 // deleteServiceRequestHandler handles DELETE /api/services/{id}
-func deleteServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Get current user from session
-		userID, err := getCurrentUser(r)
+func deleteServiceRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
 		// Fetch current user to check role
 		var currentUser User
 		if err := db.First(&currentUser, userID).Error; err != nil {
-			writeError(w, "User not found", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "User not found"})
 			return
 		}
 
-		// Extract ID from path
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/services/")
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid service ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service ID"})
 			return
 		}
 
@@ -311,25 +276,25 @@ func deleteServiceRequestHandler(db *gorm.DB) http.HandlerFunc {
 		var service ServiceRequest
 		if err := db.First(&service, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Service not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Service not found"})
 				return
 			}
-			writeError(w, "Failed to fetch service", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service"})
 			return
 		}
 
 		// Check authorization (only requester or admin can delete)
 		if service.RequesterID != userID && currentUser.Role != RoleSuperAdmin && currentUser.Role != RoleAdmin {
-			writeError(w, "Forbidden", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "Forbidden"})
 			return
 		}
 
 		// Soft delete
 		if err := db.Delete(&service).Error; err != nil {
-			writeError(w, "Failed to delete service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete service request"})
 			return
 		}
 
-		w.WriteHeader(http.StatusNoContent)
+		c.Status(http.StatusNoContent)
 	}
 }

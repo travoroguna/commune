@@ -1,72 +1,66 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // Join Request handlers
 
-func getJoinRequestsHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getJoinRequestsHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
 		var joinRequests []JoinRequest
 		if err := db.Preload("User").Preload("Community").Where("status = ?", "pending").Find(&joinRequests).Error; err != nil {
-			writeError(w, "Failed to fetch join requests", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch join requests"})
 			return
 		}
 
-		writeJSON(w, joinRequests, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, joinRequests)
+	}
 }
 
-func getCommunityJoinRequestsHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getCommunityJoinRequestsHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/communities/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		communityID, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		communityID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
 		var joinRequests []JoinRequest
 		if err := db.Preload("User").Preload("Community").Where("community_id = ? AND status = ?", communityID, "pending").Find(&joinRequests).Error; err != nil {
-			writeError(w, "Failed to fetch join requests", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch join requests"})
 			return
 		}
 
-		writeJSON(w, joinRequests, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, joinRequests)
+	}
 }
 
-func createJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func createJoinRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		userID, err := getCurrentUser(r)
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
@@ -75,20 +69,20 @@ func createJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 			Message     string `json:"message"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.CommunityID == 0 {
-			writeError(w, "Community ID is required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Community ID is required"})
 			return
 		}
 
 		// Check if community exists
 		var community Community
 		if err := db.First(&community, req.CommunityID).Error; err != nil {
-			writeError(w, "Community not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Community not found"})
 			return
 		}
 
@@ -96,7 +90,7 @@ func createJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 		var existing UserCommunity
 		err = db.Where("user_id = ? AND community_id = ?", userID, req.CommunityID).First(&existing).Error
 		if err == nil {
-			writeError(w, "You are already a member of this community", http.StatusConflict)
+			c.JSON(http.StatusConflict, gin.H{"message": "You are already a member of this community"})
 			return
 		}
 
@@ -104,7 +98,7 @@ func createJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 		var existingRequest JoinRequest
 		err = db.Where("user_id = ? AND community_id = ? AND status = ?", userID, req.CommunityID, "pending").First(&existingRequest).Error
 		if err == nil {
-			writeError(w, "You already have a pending request for this community", http.StatusConflict)
+			c.JSON(http.StatusConflict, gin.H{"message": "You already have a pending request for this community"})
 			return
 		}
 
@@ -116,33 +110,28 @@ func createJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Create(&joinRequest).Error; err != nil {
-			writeError(w, "Failed to create join request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create join request"})
 			return
 		}
 
 		// Preload relationships
 		db.Preload("User").Preload("Community").First(&joinRequest, joinRequest.ID)
 
-		writeJSON(w, joinRequest, http.StatusCreated)
-	})
+		c.JSON(http.StatusCreated, joinRequest)
+	}
 }
 
-func approveJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func approveJoinRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/join-requests/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		requestID, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		requestID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid request ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request ID"})
 			return
 		}
 
@@ -150,8 +139,8 @@ func approveJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 			Role UserRole `json:"role"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
@@ -162,22 +151,22 @@ func approveJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 		var joinRequest JoinRequest
 		if err := db.First(&joinRequest, requestID).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Join request not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Join request not found"})
 			} else {
-				writeError(w, "Failed to fetch join request", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch join request"})
 			}
 			return
 		}
 
 		if joinRequest.Status != "pending" {
-			writeError(w, "This request has already been processed", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "This request has already been processed"})
 			return
 		}
 
 		// Update request status
 		joinRequest.Status = "approved"
 		if err := db.Save(&joinRequest).Error; err != nil {
-			writeError(w, "Failed to update join request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update join request"})
 			return
 		}
 
@@ -193,60 +182,55 @@ func approveJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
 			// If adding member fails, revert the join request status
 			joinRequest.Status = "pending"
 			db.Save(&joinRequest)
-			writeError(w, "Failed to add user to community", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to add user to community"})
 			return
 		}
 
 		// Reload with relationships
 		db.Preload("User").Preload("Community").First(&joinRequest, requestID)
 
-		writeJSON(w, joinRequest, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, joinRequest)
+	}
 }
 
-func rejectJoinRequestHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func rejectJoinRequestHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/join-requests/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		requestID, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		requestID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid request ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request ID"})
 			return
 		}
 
 		var joinRequest JoinRequest
 		if err := db.First(&joinRequest, requestID).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Join request not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Join request not found"})
 			} else {
-				writeError(w, "Failed to fetch join request", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch join request"})
 			}
 			return
 		}
 
 		if joinRequest.Status != "pending" {
-			writeError(w, "This request has already been processed", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "This request has already been processed"})
 			return
 		}
 
 		joinRequest.Status = "rejected"
 		if err := db.Save(&joinRequest).Error; err != nil {
-			writeError(w, "Failed to update join request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update join request"})
 			return
 		}
 
 		// Reload with relationships
 		db.Preload("User").Preload("Community").First(&joinRequest, requestID)
 
-		writeJSON(w, joinRequest, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, joinRequest)
+	}
 }

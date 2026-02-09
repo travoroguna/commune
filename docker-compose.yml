@@ -98,7 +98,7 @@ services:
     container_name: commune-app
     environment:
       MODE: production
-      PORT: 3000
+      PORT: 8080
       # Database configuration
       DB_HOST: postgres
       DB_PORT: 5432
@@ -112,7 +112,7 @@ services:
       SEAWEEDFS_MASTER: seaweedfs-master:9333
       SEAWEEDFS_FILER: seaweedfs-filer:8888
     ports:
-      - "3000:3000"
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy

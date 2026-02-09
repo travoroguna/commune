@@ -1,77 +1,75 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // Community handlers
 
-func getCommunitiesHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getCommunitiesHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
 		var communities []Community
 		if err := db.Where("is_active = ?", true).Find(&communities).Error; err != nil {
-			writeError(w, "Failed to fetch communities", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch communities"})
 			return
 		}
 
-		writeJSON(w, communities, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, communities)
+	}
 }
 
-func getCommunityByIDHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getCommunityByIDHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/communities/")
-		idStr = strings.Split(idStr, "/")[0]
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
 		var community Community
 		if err := db.First(&community, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Community not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Community not found"})
 			} else {
-				writeError(w, "Failed to fetch community", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch community"})
 			}
 			return
 		}
 
-		writeJSON(w, community, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, community)
+	}
 }
 
-func createCommunityHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func createCommunityHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
 		var req Community
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.Name == "" {
-			writeError(w, "Name is required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Name is required"})
 			return
 		}
 
@@ -85,49 +83,48 @@ func createCommunityHandler(db *gorm.DB) http.HandlerFunc {
 		// Check if slug already exists
 		var existingCommunity Community
 		if err := db.Where("slug = ?", req.Slug).First(&existingCommunity).Error; err == nil {
-			writeError(w, "Community with this slug already exists", http.StatusConflict)
+			c.JSON(http.StatusConflict, gin.H{"message": "Community with this slug already exists"})
 			return
 		}
 
 		req.IsActive = true
 
 		if err := db.Create(&req).Error; err != nil {
-			writeError(w, "Failed to create community", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create community"})
 			return
 		}
 
-		writeJSON(w, req, http.StatusCreated)
-	})
+		c.JSON(http.StatusCreated, req)
+	}
 }
 
-func updateCommunityHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func updateCommunityHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/communities/")
-		idStr = strings.Split(idStr, "/")[0]
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
 		var community Community
 		if err := db.First(&community, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Community not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Community not found"})
 			} else {
-				writeError(w, "Failed to fetch community", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch community"})
 			}
 			return
 		}
 
 		var req map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
@@ -172,100 +169,90 @@ func updateCommunityHandler(db *gorm.DB) http.HandlerFunc {
 
 		if len(updates) > 0 {
 			if err := db.Model(&community).Updates(updates).Error; err != nil {
-				writeError(w, "Failed to update community", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update community"})
 				return
 			}
 		}
 
 		// Fetch updated community
 		if err := db.First(&community, id).Error; err != nil {
-			writeError(w, "Failed to fetch updated community", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch updated community"})
 			return
 		}
 
-		writeJSON(w, community, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, community)
+	}
 }
 
-func deleteCommunityHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func deleteCommunityHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		idStr := strings.TrimPrefix(r.URL.Path, "/api/communities/")
+		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
 		var community Community
 		if err := db.First(&community, id).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Community not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Community not found"})
 			} else {
-				writeError(w, "Failed to fetch community", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch community"})
 			}
 			return
 		}
 
 		// Soft delete
 		if err := db.Delete(&community).Error; err != nil {
-			writeError(w, "Failed to delete community", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete community"})
 			return
 		}
 
-		writeJSON(w, map[string]interface{}{"message": "Community deleted successfully"}, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, gin.H{"message": "Community deleted successfully"})
+	}
 }
 
-func getCommunityMembersHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getCommunityMembersHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/communities/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		id, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
 		var userCommunities []UserCommunity
 		if err := db.Preload("User").Where("community_id = ? AND is_active = ?", id, true).Find(&userCommunities).Error; err != nil {
-			writeError(w, "Failed to fetch community members", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch community members"})
 			return
 		}
 
-		writeJSON(w, userCommunities, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, userCommunities)
+	}
 }
 
-func addCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func addCommunityMemberHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/communities/"), "/")
-		if len(parts) < 2 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		communityID, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		communityID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
@@ -274,13 +261,13 @@ func addCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
 			Role   UserRole `json:"role"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.UserID == 0 {
-			writeError(w, "User ID is required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "User ID is required"})
 			return
 		}
 
@@ -291,14 +278,14 @@ func addCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
 		// Check if user exists
 		var user User
 		if err := db.First(&user, req.UserID).Error; err != nil {
-			writeError(w, "User not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			return
 		}
 
 		// Check if community exists
 		var community Community
 		if err := db.First(&community, communityID).Error; err != nil {
-			writeError(w, "Community not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Community not found"})
 			return
 		}
 
@@ -306,7 +293,7 @@ func addCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
 		var existing UserCommunity
 		err = db.Where("user_id = ? AND community_id = ?", req.UserID, communityID).First(&existing).Error
 		if err == nil {
-			writeError(w, "User is already a member of this community", http.StatusConflict)
+			c.JSON(http.StatusConflict, gin.H{"message": "User is already a member of this community"})
 			return
 		}
 
@@ -318,79 +305,71 @@ func addCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Create(&userCommunity).Error; err != nil {
-			writeError(w, "Failed to add member", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to add member"})
 			return
 		}
 
 		// Preload relationships
 		db.Preload("User").Preload("Community").First(&userCommunity, "user_id = ? AND community_id = ?", req.UserID, communityID)
 
-		writeJSON(w, userCommunity, http.StatusCreated)
-	})
+		c.JSON(http.StatusCreated, userCommunity)
+	}
 }
 
-func removeCommunityMemberHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func removeCommunityMemberHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/communities/"), "/")
-		if len(parts) < 3 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		communityID, err := strconv.ParseUint(parts[0], 10, 32)
+		communityIDStr := c.Param("id")
+		communityID, err := strconv.ParseUint(communityIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
-		userID, err := strconv.ParseUint(parts[2], 10, 32)
+		userIDStr := c.Param("userID")
+		userID, err := strconv.ParseUint(userIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
 		result := db.Where("user_id = ? AND community_id = ?", userID, communityID).Delete(&UserCommunity{})
 		if result.Error != nil {
-			writeError(w, "Failed to remove member", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to remove member"})
 			return
 		}
 
 		if result.RowsAffected == 0 {
-			writeError(w, "Member not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Member not found"})
 			return
 		}
 
-		writeJSON(w, map[string]interface{}{"message": "Member removed successfully"}, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, gin.H{"message": "Member removed successfully"})
+	}
 }
 
-func updateCommunityMemberRoleHandler(db *gorm.DB) http.HandlerFunc {
-	return requireRole(db, RoleSuperAdmin, RoleAdmin)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func updateCommunityMemberRoleHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requireRole(db, RoleSuperAdmin, RoleAdmin)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/communities/"), "/")
-		if len(parts) < 3 {
-			writeError(w, "Invalid URL", http.StatusBadRequest)
-			return
-		}
-
-		communityID, err := strconv.ParseUint(parts[0], 10, 32)
+		communityIDStr := c.Param("id")
+		communityID, err := strconv.ParseUint(communityIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community ID"})
 			return
 		}
 
-		userID, err := strconv.ParseUint(parts[2], 10, 32)
+		userIDStr := c.Param("userID")
+		userID, err := strconv.ParseUint(userIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid user ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid user ID"})
 			return
 		}
 
@@ -398,34 +377,34 @@ func updateCommunityMemberRoleHandler(db *gorm.DB) http.HandlerFunc {
 			Role UserRole `json:"role"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.Role == "" {
-			writeError(w, "Role is required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Role is required"})
 			return
 		}
 
 		var userCommunity UserCommunity
 		if err := db.Where("user_id = ? AND community_id = ?", userID, communityID).First(&userCommunity).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				writeError(w, "Member not found", http.StatusNotFound)
+				c.JSON(http.StatusNotFound, gin.H{"message": "Member not found"})
 			} else {
-				writeError(w, "Failed to fetch member", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch member"})
 			}
 			return
 		}
 
 		if err := db.Model(&userCommunity).Update("role", req.Role).Error; err != nil {
-			writeError(w, "Failed to update member role", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update member role"})
 			return
 		}
 
 		// Reload with relationships
 		db.Preload("User").Preload("Community").Where("user_id = ? AND community_id = ?", userID, communityID).First(&userCommunity)
 
-		writeJSON(w, userCommunity, http.StatusOK)
-	})
+		c.JSON(http.StatusOK, userCommunity)
+	}
 }

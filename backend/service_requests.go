@@ -1,67 +1,38 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// setupServiceRequestRoutes sets up routes for service requests and offers
-func setupServiceRequestRoutes(mux *http.ServeMux, db *gorm.DB) {
-	// Service request routes
-	mux.HandleFunc("/api/service-requests", authMiddleware(db)(serviceRequestsHandler(db)))
-	mux.HandleFunc("/api/service-requests/", authMiddleware(db)(serviceRequestDetailHandler(db)))
-	
-	// Service offer routes
-	mux.HandleFunc("/api/service-offers", authMiddleware(db)(serviceOffersHandler(db)))
-	mux.HandleFunc("/api/service-offers/", authMiddleware(db)(serviceOfferDetailHandler(db)))
-}
-
-// getUserFromContext retrieves the user from the request
-func getUserFromContext(r *http.Request, db *gorm.DB) (*User, error) {
-	userIDStr := r.Header.Get("X-User-ID")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		return nil, err
-	}
-	
-	var user User
-	if err := db.First(&user, userID).Error; err != nil {
-		return nil, err
-	}
-	
-	return &user, nil
-}
-
 // serviceRequestsHandler handles GET (list) and POST (create) for service requests
-func serviceRequestsHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, err := getUserFromContext(r, db)
-		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+func serviceRequestsHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		switch r.Method {
+		switch c.Request.Method {
 		case http.MethodGet:
-			listServiceRequests(w, r, db, user)
+			listServiceRequests(c, db)
 		case http.MethodPost:
-			createServiceRequest(w, r, db, user)
+			createServiceRequest(c, db)
 		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
 		}
 	}
 }
 
 // listServiceRequests handles GET /api/service-requests
-func listServiceRequests(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User) {
+func listServiceRequests(c *gin.Context, db *gorm.DB) {
 	// Get query parameters
-	communityIDStr := r.URL.Query().Get("community_id")
-	status := r.URL.Query().Get("status")
-	category := r.URL.Query().Get("category")
+	communityIDStr := c.Query("community_id")
+	status := c.Query("status")
+	category := c.Query("category")
 
 	// Build query
 	query := db.Model(&ServiceRequest{}).
@@ -74,7 +45,7 @@ func listServiceRequests(w http.ResponseWriter, r *http.Request, db *gorm.DB, us
 	if communityIDStr != "" {
 		communityID, err := strconv.ParseUint(communityIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid community_id", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid community_id"})
 			return
 		}
 		query = query.Where("community_id = ?", communityID)
@@ -92,15 +63,21 @@ func listServiceRequests(w http.ResponseWriter, r *http.Request, db *gorm.DB, us
 
 	var requests []ServiceRequest
 	if err := query.Order("created_at DESC").Find(&requests).Error; err != nil {
-		writeError(w, "Failed to fetch service requests", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service requests"})
 		return
 	}
 
-	writeJSON(w, requests, http.StatusOK)
+	c.JSON(http.StatusOK, requests)
 }
 
 // createServiceRequest handles POST /api/service-requests
-func createServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User) {
+func createServiceRequest(c *gin.Context, db *gorm.DB) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
 	var input struct {
 		Title       string  `json:"title"`
 		Description string  `json:"description"`
@@ -109,14 +86,14 @@ func createServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, u
 		Budget      float64 `json:"budget"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 		return
 	}
 
 	// Validate required fields
 	if input.Title == "" || input.Description == "" || input.CommunityID == 0 {
-		writeError(w, "Title, description, and community_id are required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Title, description, and community_id are required"})
 		return
 	}
 
@@ -125,70 +102,62 @@ func createServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, u
 		Title:       input.Title,
 		Description: input.Description,
 		Category:    input.Category,
-		RequesterID: user.ID,
+		RequesterID: userID,
 		CommunityID: input.CommunityID,
 		Status:      "open",
 		Budget:      input.Budget,
 	}
 
 	if err := db.Create(&request).Error; err != nil {
-		writeError(w, "Failed to create service request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create service request"})
 		return
 	}
 
 	// Reload with associations
 	if err := db.Preload("Requester").Preload("Community").First(&request, request.ID).Error; err != nil {
-		writeError(w, "Failed to load created request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load created request"})
 		return
 	}
 
-	writeJSON(w, request, http.StatusCreated)
+	c.JSON(http.StatusCreated, request)
 }
 
 // serviceRequestDetailHandler handles GET, PUT, DELETE for a specific service request
-func serviceRequestDetailHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, err := getUserFromContext(r, db)
+func serviceRequestDetailHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
+			return
+		}
+
+		idStr := c.Param("id")
+		requestID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service request ID"})
 			return
 		}
 
-		// Extract ID from path
-		path := strings.TrimPrefix(r.URL.Path, "/api/service-requests/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 0 || parts[0] == "" {
-			writeError(w, "Service request ID required", http.StatusBadRequest)
+		// Handle accept offer endpoint - check if this is the accept-offer sub-route
+		if c.Param("action") == "accept-offer" {
+			acceptServiceOffer(c, db, uint(requestID))
 			return
 		}
 
-		requestID, err := strconv.ParseUint(parts[0], 10, 32)
-		if err != nil {
-			writeError(w, "Invalid service request ID", http.StatusBadRequest)
-			return
-		}
-
-		// Handle accept offer endpoint
-		if len(parts) >= 2 && parts[1] == "accept-offer" {
-			acceptServiceOffer(w, r, db, user, uint(requestID))
-			return
-		}
-
-		switch r.Method {
+		switch c.Request.Method {
 		case http.MethodGet:
-			getServiceRequest(w, r, db, uint(requestID))
+			getServiceRequest(c, db, uint(requestID))
 		case http.MethodPut:
-			updateServiceRequest(w, r, db, user, uint(requestID))
+			updateServiceRequest(c, db, uint(requestID))
 		case http.MethodDelete:
-			deleteServiceRequest(w, r, db, user, uint(requestID))
+			deleteServiceRequest(c, db, uint(requestID))
 		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
 		}
 	}
 }
 
 // getServiceRequest handles GET /api/service-requests/:id
-func getServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, requestID uint) {
+func getServiceRequest(c *gin.Context, db *gorm.DB, requestID uint) {
 	var request ServiceRequest
 	if err := db.Preload("Requester").
 		Preload("Community").
@@ -198,31 +167,39 @@ func getServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, requ
 		Preload("AcceptedOffer.Provider").
 		First(&request, requestID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service request not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service request not found"})
 		} else {
-			writeError(w, "Failed to fetch service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service request"})
 		}
 		return
 	}
 
-	writeJSON(w, request, http.StatusOK)
+	c.JSON(http.StatusOK, request)
 }
 
 // updateServiceRequest handles PUT /api/service-requests/:id
-func updateServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, requestID uint) {
+func updateServiceRequest(c *gin.Context, db *gorm.DB, requestID uint) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
+	userRole, _ := c.Get("userRole")
+
 	var request ServiceRequest
 	if err := db.First(&request, requestID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service request not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service request not found"})
 		} else {
-			writeError(w, "Failed to fetch service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service request"})
 		}
 		return
 	}
 
 	// Only requester can update
-	if request.RequesterID != user.ID && user.Role != RoleSuperAdmin && user.Role != RoleAdmin {
-		writeError(w, "Unauthorized", http.StatusForbidden)
+	if request.RequesterID != userID && userRole != RoleSuperAdmin && userRole != RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized"})
 		return
 	}
 
@@ -234,8 +211,8 @@ func updateServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, u
 		Status      *string  `json:"status"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 		return
 	}
 
@@ -258,50 +235,64 @@ func updateServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, u
 	}
 
 	if err := db.Model(&request).Updates(updates).Error; err != nil {
-		writeError(w, "Failed to update service request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update service request"})
 		return
 	}
 
 	// Reload with associations
 	if err := db.Preload("Requester").Preload("Community").First(&request, requestID).Error; err != nil {
-		writeError(w, "Failed to load updated request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load updated request"})
 		return
 	}
 
-	writeJSON(w, request, http.StatusOK)
+	c.JSON(http.StatusOK, request)
 }
 
 // deleteServiceRequest handles DELETE /api/service-requests/:id
-func deleteServiceRequest(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, requestID uint) {
+func deleteServiceRequest(c *gin.Context, db *gorm.DB, requestID uint) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
+	userRole, _ := c.Get("userRole")
+
 	var request ServiceRequest
 	if err := db.First(&request, requestID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service request not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service request not found"})
 		} else {
-			writeError(w, "Failed to fetch service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service request"})
 		}
 		return
 	}
 
 	// Only requester or admin can delete
-	if request.RequesterID != user.ID && user.Role != RoleSuperAdmin && user.Role != RoleAdmin {
-		writeError(w, "Unauthorized", http.StatusForbidden)
+	if request.RequesterID != userID && userRole != RoleSuperAdmin && userRole != RoleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized"})
 		return
 	}
 
 	// Soft delete
 	if err := db.Delete(&request).Error; err != nil {
-		writeError(w, "Failed to delete service request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete service request"})
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
 // acceptServiceOffer handles PUT /api/service-requests/:id/accept-offer
-func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, requestID uint) {
-	if r.Method != http.MethodPost && r.Method != http.MethodPut {
-		writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func acceptServiceOffer(c *gin.Context, db *gorm.DB, requestID uint) {
+	if c.Request.Method != http.MethodPost && c.Request.Method != http.MethodPut {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
+		return
+	}
+
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 		return
 	}
 
@@ -309,13 +300,13 @@ func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 		OfferID uint `json:"offer_id"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 		return
 	}
 
 	if input.OfferID == 0 {
-		writeError(w, "offer_id is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "offer_id is required"})
 		return
 	}
 
@@ -323,15 +314,15 @@ func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	var request ServiceRequest
 	if err := db.First(&request, requestID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service request not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service request not found"})
 		} else {
-			writeError(w, "Failed to fetch service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service request"})
 		}
 		return
 	}
 
-	if request.RequesterID != user.ID {
-		writeError(w, "Unauthorized: only requester can accept offers", http.StatusForbidden)
+	if request.RequesterID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized: only requester can accept offers"})
 		return
 	}
 
@@ -339,20 +330,20 @@ func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	var offer ServiceOffer
 	if err := db.First(&offer, input.OfferID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Offer not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Offer not found"})
 		} else {
-			writeError(w, "Failed to fetch offer", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch offer"})
 		}
 		return
 	}
 
 	if offer.ServiceRequestID != requestID {
-		writeError(w, "Offer does not belong to this request", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Offer does not belong to this request"})
 		return
 	}
 
 	// Update request and offer in transaction
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		// Update service request
 		if err := tx.Model(&request).Updates(map[string]interface{}{
 			"accepted_offer_id": input.OfferID,
@@ -377,7 +368,7 @@ func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	})
 
 	if err != nil {
-		writeError(w, "Failed to accept offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to accept offer"})
 		return
 	}
 
@@ -387,39 +378,40 @@ func acceptServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 		Preload("AcceptedOffer").
 		Preload("AcceptedOffer.Provider").
 		First(&request, requestID).Error; err != nil {
-		writeError(w, "Failed to load updated request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load updated request"})
 		return
 	}
 
-	writeJSON(w, request, http.StatusOK)
+	c.JSON(http.StatusOK, request)
 }
 
 // serviceOffersHandler handles GET (list) and POST (create) for service offers
-func serviceOffersHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, err := getUserFromContext(r, db)
-		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+func serviceOffersHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		switch r.Method {
+		switch c.Request.Method {
 		case http.MethodGet:
-			listServiceOffers(w, r, db, user)
+			listServiceOffers(c, db)
 		case http.MethodPost:
-			createServiceOffer(w, r, db, user)
+			createServiceOffer(c, db)
 		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
 		}
 	}
 }
 
 // listServiceOffers handles GET /api/service-offers
-func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User) {
+func listServiceOffers(c *gin.Context, db *gorm.DB) {
+	userID, _ := getCurrentUser(c)
+
 	// Get query parameters
-	serviceRequestIDStr := r.URL.Query().Get("service_request_id")
-	myOffers := r.URL.Query().Get("my_offers") == "true"
-	providerIDStr := r.URL.Query().Get("provider_id")
+	serviceRequestIDStr := c.Query("service_request_id")
+	myOffers := c.Query("my_offers") == "true"
+	providerIDStr := c.Query("provider_id")
 
 	query := db.Model(&ServiceOffer{}).
 		Preload("Provider").
@@ -431,7 +423,7 @@ func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user
 	if serviceRequestIDStr != "" {
 		serviceRequestID, err := strconv.ParseUint(serviceRequestIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid service_request_id", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service_request_id"})
 			return
 		}
 		query = query.Where("service_request_id = ?", serviceRequestID)
@@ -439,14 +431,14 @@ func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user
 
 	// Filter by current user's offers if requested
 	if myOffers {
-		query = query.Where("provider_id = ?", user.ID)
+		query = query.Where("provider_id = ?", userID)
 	}
 
 	// Filter by provider ID if specified
 	if providerIDStr != "" {
 		providerID, err := strconv.ParseUint(providerIDStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid provider_id", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid provider_id"})
 			return
 		}
 		query = query.Where("provider_id = ?", providerID)
@@ -454,15 +446,21 @@ func listServiceOffers(w http.ResponseWriter, r *http.Request, db *gorm.DB, user
 
 	var offers []ServiceOffer
 	if err := query.Order("created_at DESC").Find(&offers).Error; err != nil {
-		writeError(w, "Failed to fetch service offers", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service offers"})
 		return
 	}
 
-	writeJSON(w, offers, http.StatusOK)
+	c.JSON(http.StatusOK, offers)
 }
 
 // createServiceOffer handles POST /api/service-offers
-func createServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User) {
+func createServiceOffer(c *gin.Context, db *gorm.DB) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
 	var input struct {
 		ServiceRequestID  uint    `json:"service_request_id"`
 		Description       string  `json:"description"`
@@ -470,14 +468,14 @@ func createServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 		EstimatedDuration string  `json:"estimated_duration"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 		return
 	}
 
 	// Validate required fields
 	if input.ServiceRequestID == 0 || input.Description == "" {
-		writeError(w, "service_request_id and description are required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "service_request_id and description are required"})
 		return
 	}
 
@@ -485,22 +483,22 @@ func createServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	var request ServiceRequest
 	if err := db.First(&request, input.ServiceRequestID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service request not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service request not found"})
 		} else {
-			writeError(w, "Failed to fetch service request", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service request"})
 		}
 		return
 	}
 
 	if request.Status != "open" {
-		writeError(w, "Cannot create offer for non-open requests", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Cannot create offer for non-open requests"})
 		return
 	}
 
 	// Create service offer
 	offer := ServiceOffer{
 		ServiceRequestID:  input.ServiceRequestID,
-		ProviderID:        user.ID,
+		ProviderID:        userID,
 		Description:       input.Description,
 		ProposedPrice:     input.ProposedPrice,
 		EstimatedDuration: input.EstimatedDuration,
@@ -508,138 +506,142 @@ func createServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	}
 
 	if err := db.Create(&offer).Error; err != nil {
-		writeError(w, "Failed to create service offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create service offer"})
 		return
 	}
 
 	// Reload with associations
 	if err := db.Preload("Provider").Preload("ServiceRequest").First(&offer, offer.ID).Error; err != nil {
-		writeError(w, "Failed to load created offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load created offer"})
 		return
 	}
 
-	writeJSON(w, offer, http.StatusCreated)
+	c.JSON(http.StatusCreated, offer)
 }
 
 // serviceOfferDetailHandler handles GET, PUT, DELETE for a specific service offer
-func serviceOfferDetailHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, err := getUserFromContext(r, db)
-		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+func serviceOfferDetailHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		// Extract ID from path
-		path := strings.TrimPrefix(r.URL.Path, "/api/service-offers/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 0 || parts[0] == "" {
-			writeError(w, "Service offer ID required", http.StatusBadRequest)
-			return
-		}
-
-		offerID, err := strconv.ParseUint(parts[0], 10, 32)
+		idStr := c.Param("id")
+		offerID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
-			writeError(w, "Invalid service offer ID", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid service offer ID"})
 			return
 		}
 
 		// Handle withdraw endpoint
-		if len(parts) >= 2 && parts[1] == "withdraw" {
-			withdrawServiceOffer(w, r, db, user, uint(offerID))
+		if c.Param("action") == "withdraw" {
+			withdrawServiceOffer(c, db, uint(offerID))
 			return
 		}
 
-		switch r.Method {
+		switch c.Request.Method {
 		case http.MethodGet:
-			getServiceOffer(w, r, db, uint(offerID))
+			getServiceOffer(c, db, uint(offerID))
 		case http.MethodPut:
-			updateServiceOffer(w, r, db, user, uint(offerID))
+			updateServiceOffer(c, db, uint(offerID))
 		case http.MethodDelete:
-			deleteServiceOffer(w, r, db, user, uint(offerID))
+			deleteServiceOffer(c, db, uint(offerID))
 		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
 		}
 	}
 }
 
 // withdrawServiceOffer handles POST /api/service-offers/:id/withdraw
-func withdrawServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, offerID uint) {
-	if r.Method != http.MethodPost {
-		writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func withdrawServiceOffer(c *gin.Context, db *gorm.DB, offerID uint) {
+	if c.Request.Method != http.MethodPost {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{"message": "Method not allowed"})
+		return
+	}
+
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 		return
 	}
 
 	var offer ServiceOffer
 	if err := db.First(&offer, offerID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service offer not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service offer not found"})
 		} else {
-			writeError(w, "Failed to fetch service offer", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service offer"})
 		}
 		return
 	}
 
 	// Only provider can withdraw
-	if offer.ProviderID != user.ID {
-		writeError(w, "Unauthorized", http.StatusForbidden)
+	if offer.ProviderID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized"})
 		return
 	}
 
 	// Cannot withdraw accepted offers
 	if offer.Status == "accepted" {
-		writeError(w, "Cannot withdraw accepted offers", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Cannot withdraw accepted offers"})
 		return
 	}
 
 	// Update status to withdrawn
 	if err := db.Model(&offer).Update("status", "withdrawn").Error; err != nil {
-		writeError(w, "Failed to withdraw service offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to withdraw service offer"})
 		return
 	}
 
 	// Reload with associations
 	if err := db.Preload("Provider").Preload("ServiceRequest").First(&offer, offerID).Error; err != nil {
-		writeError(w, "Failed to load updated offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load updated offer"})
 		return
 	}
 
-	writeJSON(w, offer, http.StatusOK)
+	c.JSON(http.StatusOK, offer)
 }
 
 // getServiceOffer handles GET /api/service-offers/:id
-func getServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, offerID uint) {
+func getServiceOffer(c *gin.Context, db *gorm.DB, offerID uint) {
 	var offer ServiceOffer
 	if err := db.Preload("Provider").
 		Preload("ServiceRequest").
 		Preload("ServiceRequest.Requester").
 		First(&offer, offerID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service offer not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service offer not found"})
 		} else {
-			writeError(w, "Failed to fetch service offer", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service offer"})
 		}
 		return
 	}
 
-	writeJSON(w, offer, http.StatusOK)
+	c.JSON(http.StatusOK, offer)
 }
 
 // updateServiceOffer handles PUT /api/service-offers/:id
-func updateServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, offerID uint) {
+func updateServiceOffer(c *gin.Context, db *gorm.DB, offerID uint) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
 	var offer ServiceOffer
 	if err := db.First(&offer, offerID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service offer not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service offer not found"})
 		} else {
-			writeError(w, "Failed to fetch service offer", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service offer"})
 		}
 		return
 	}
 
 	// Only provider can update
-	if offer.ProviderID != user.ID {
-		writeError(w, "Unauthorized", http.StatusForbidden)
+	if offer.ProviderID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized"})
 		return
 	}
 
@@ -650,8 +652,8 @@ func updateServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 		Status            *string  `json:"status"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 		return
 	}
 
@@ -671,48 +673,54 @@ func updateServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, use
 	}
 
 	if err := db.Model(&offer).Updates(updates).Error; err != nil {
-		writeError(w, "Failed to update service offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update service offer"})
 		return
 	}
 
 	// Reload with associations
 	if err := db.Preload("Provider").Preload("ServiceRequest").First(&offer, offerID).Error; err != nil {
-		writeError(w, "Failed to load updated offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to load updated offer"})
 		return
 	}
 
-	writeJSON(w, offer, http.StatusOK)
+	c.JSON(http.StatusOK, offer)
 }
 
 // deleteServiceOffer handles DELETE /api/service-offers/:id (withdraw offer)
-func deleteServiceOffer(w http.ResponseWriter, r *http.Request, db *gorm.DB, user *User, offerID uint) {
+func deleteServiceOffer(c *gin.Context, db *gorm.DB, offerID uint) {
+	userID, err := getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+
 	var offer ServiceOffer
 	if err := db.First(&offer, offerID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			writeError(w, "Service offer not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "Service offer not found"})
 		} else {
-			writeError(w, "Failed to fetch service offer", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to fetch service offer"})
 		}
 		return
 	}
 
 	// Only provider can delete
-	if offer.ProviderID != user.ID {
-		writeError(w, "Unauthorized", http.StatusForbidden)
+	if offer.ProviderID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Unauthorized"})
 		return
 	}
 
 	// Cannot delete accepted offers
 	if offer.Status == "accepted" {
-		writeError(w, "Cannot withdraw accepted offers", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Cannot withdraw accepted offers"})
 		return
 	}
 
 	// Soft delete
 	if err := db.Delete(&offer).Error; err != nil {
-		writeError(w, "Failed to delete service offer", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete service offer"})
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }

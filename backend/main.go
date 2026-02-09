@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	gormigrate "github.com/go-gormigrate/gormigrate/v2"
 	"github.com/olivere/vite"
 	"gorm.io/driver/postgres"
@@ -34,36 +34,49 @@ func main() {
 		mode = "development"
 	}
 
-	// Setup HTTP server
-	mux := http.NewServeMux()
+	// Set Gin mode
+	if mode == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
+	// Create Gin router
+	router := gin.Default()
 
 	// API routes
-	mux.HandleFunc("/api/health", healthHandler)
+	api := router.Group("/api")
+	{
+		// Health check
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
 
-	// Auth routes
-	mux.HandleFunc("/api/auth/login", loginHandler(db))
-	mux.HandleFunc("/api/auth/logout", logoutHandler())
-	mux.HandleFunc("/api/auth/me", getCurrentUserHandler(db))
-	mux.HandleFunc("/api/auth/first-boot", checkFirstBootHandler(db))
-	mux.HandleFunc("/api/auth/setup-super-user", setupSuperUserHandler(db))
+		// Auth routes
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", loginHandler(db))
+			auth.POST("/logout", logoutHandler())
+			auth.GET("/me", getCurrentUserHandler(db))
+			auth.GET("/first-boot", checkFirstBootHandler(db))
+			auth.POST("/setup-super-user", setupSuperUserHandler(db))
+		}
 
-	// User routes - need router to handle different methods and paths
-	setupUserRoutes(mux, db)
+		// User routes
+		setupUserRoutes(api, db)
 
-	// Community routes
-	setupCommunityRoutes(mux, db)
+		// Community routes
+		setupCommunityRoutes(api, db)
 
-	// Join request routes
-	setupJoinRequestRoutes(mux, db)
+		// Join request routes
+		setupJoinRequestRoutes(api, db)
 
-	// Service routes (simple services page)
-	setupServiceRoutes(mux, db)
+		// Service routes (simple services page)
+		setupServiceRoutes(api, db)
 
-	// Service request and offer routes (marketplace)
-	setupServiceRequestRoutes(mux, db)
-
-	// Service routes
-	setupServiceRoutes(mux, db)
+		// Service request and offer routes (marketplace)
+		setupServiceRequestRoutes(api, db)
+	}
 
 	// Vite integration for serving frontend
 	var viteHandler *vite.Handler
@@ -92,16 +105,16 @@ func main() {
 	}
 
 	// Use vite handler for all non-API routes
-	mux.Handle("/", viteHandler)
+	router.NoRoute(gin.WrapH(viteHandler))
 
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "3000"
+		port = "8080"
 	}
 
 	log.Printf("Server starting on http://localhost:%s\n", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := router.Run(":" + port); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
 }
@@ -187,136 +200,74 @@ func initDatabase() (*gorm.DB, error) {
 	return gorm.Open(sqlite.Open("commune.db"), &gorm.Config{})
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
-}
-
 // Route setup functions
-func setupUserRoutes(mux *http.ServeMux, db *gorm.DB) {
-	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getUsersHandler(db)(w, r)
-		case http.MethodPost:
-			createUserHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
 
-	mux.HandleFunc("/api/users/change-password", changePasswordHandler(db))
-
-	// Handle /api/users/{id} and /api/users/{id}/communities
-	mux.HandleFunc("/api/users/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-
-		// Check if it's /api/users/{id}/communities
-		if strings.Contains(path, "/communities") {
-			getUserCommunitiesHandler(db)(w, r)
-			return
-		}
-
-		// Otherwise it's /api/users/{id}
-		switch r.Method {
-		case http.MethodGet:
-			getUserByIDHandler(db)(w, r)
-		case http.MethodPut:
-			updateUserHandler(db)(w, r)
-		case http.MethodDelete:
-			deleteUserHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+func setupUserRoutes(api *gin.RouterGroup, db *gorm.DB) {
+	users := api.Group("/users")
+	{
+		users.GET("", getUsersHandler(db))
+		users.POST("", createUserHandler(db))
+		users.POST("/change-password", changePasswordHandler(db))
+		users.GET("/:id", getUserByIDHandler(db))
+		users.PUT("/:id", updateUserHandler(db))
+		users.DELETE("/:id", deleteUserHandler(db))
+		users.GET("/:id/communities", getUserCommunitiesHandler(db))
+	}
 }
 
-func setupCommunityRoutes(mux *http.ServeMux, db *gorm.DB) {
-	mux.HandleFunc("/api/communities", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getCommunitiesHandler(db)(w, r)
-		case http.MethodPost:
-			createCommunityHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+func setupCommunityRoutes(api *gin.RouterGroup, db *gorm.DB) {
+	communities := api.Group("/communities")
+	{
+		communities.GET("", getCommunitiesHandler(db))
+		communities.POST("", createCommunityHandler(db))
+		communities.GET("/:id", getCommunityByIDHandler(db))
+		communities.PUT("/:id", updateCommunityHandler(db))
+		communities.DELETE("/:id", deleteCommunityHandler(db))
 
-	// Handle /api/communities/{id}, /api/communities/{id}/members, /api/communities/{id}/join-requests
-	mux.HandleFunc("/api/communities/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
+		// Members
+		communities.GET("/:id/members", getCommunityMembersHandler(db))
+		communities.POST("/:id/members", addCommunityMemberHandler(db))
+		communities.DELETE("/:id/members/:userId", removeCommunityMemberHandler(db))
+		communities.PUT("/:id/members/:userId", updateCommunityMemberRoleHandler(db))
 
-		// Check if it's join-requests endpoint
-		if strings.Contains(path, "/join-requests") {
-			getCommunityJoinRequestsHandler(db)(w, r)
-			return
-		}
-
-		// Check if it's members endpoint
-		if strings.Contains(path, "/members") {
-			parts := strings.Split(strings.TrimPrefix(path, "/api/communities/"), "/")
-			if len(parts) >= 3 {
-				// /api/communities/{id}/members/{userId}
-				switch r.Method {
-				case http.MethodDelete:
-					removeCommunityMemberHandler(db)(w, r)
-				case http.MethodPut:
-					updateCommunityMemberRoleHandler(db)(w, r)
-				default:
-					writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			} else {
-				// /api/communities/{id}/members
-				switch r.Method {
-				case http.MethodGet:
-					getCommunityMembersHandler(db)(w, r)
-				case http.MethodPost:
-					addCommunityMemberHandler(db)(w, r)
-				default:
-					writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			}
-			return
-		}
-
-		// Otherwise it's /api/communities/{id}
-		switch r.Method {
-		case http.MethodGet:
-			getCommunityByIDHandler(db)(w, r)
-		case http.MethodPut:
-			updateCommunityHandler(db)(w, r)
-		case http.MethodDelete:
-			deleteCommunityHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+		// Join requests
+		communities.GET("/:id/join-requests", getCommunityJoinRequestsHandler(db))
+	}
 }
 
-func setupJoinRequestRoutes(mux *http.ServeMux, db *gorm.DB) {
-	mux.HandleFunc("/api/join-requests", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			getJoinRequestsHandler(db)(w, r)
-		case http.MethodPost:
-			createJoinRequestHandler(db)(w, r)
-		default:
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+func setupJoinRequestRoutes(api *gin.RouterGroup, db *gorm.DB) {
+	joinRequests := api.Group("/join-requests")
+	{
+		joinRequests.GET("", getJoinRequestsHandler(db))
+		joinRequests.POST("", createJoinRequestHandler(db))
+		joinRequests.POST("/:id/approve", approveJoinRequestHandler(db))
+		joinRequests.POST("/:id/reject", rejectJoinRequestHandler(db))
+	}
+}
 
-	// Handle /api/join-requests/{id}/approve and /api/join-requests/{id}/reject
-	mux.HandleFunc("/api/join-requests/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
+func setupServiceRoutes(api *gin.RouterGroup, db *gorm.DB) {
+	services := api.Group("/services")
+	{
+		services.GET("", getServicesHandler(db))
+		services.POST("", createServiceRequestHandler(db))
+		services.GET("/:id", getServiceByIDHandler(db))
+		services.PUT("/:id", updateServiceRequestHandler(db))
+		services.DELETE("/:id", deleteServiceRequestHandler(db))
+	}
+}
 
-		if strings.HasSuffix(path, "/approve") {
-			approveJoinRequestHandler(db)(w, r)
-		} else if strings.HasSuffix(path, "/reject") {
-			rejectJoinRequestHandler(db)(w, r)
-		} else {
-			writeError(w, "Not found", http.StatusNotFound)
-		}
-	})
+func setupServiceRequestRoutes(api *gin.RouterGroup, db *gorm.DB) {
+	// Service requests - using the compound handlers
+	api.GET("/service-requests", serviceRequestsHandler(db))
+	api.POST("/service-requests", serviceRequestsHandler(db))
+	api.GET("/service-requests/:id", serviceRequestDetailHandler(db))
+	api.PUT("/service-requests/:id", serviceRequestDetailHandler(db))
+	api.DELETE("/service-requests/:id", serviceRequestDetailHandler(db))
+
+	// Service offers - using the compound handlers
+	api.GET("/service-offers", serviceOffersHandler(db))
+	api.POST("/service-offers", serviceOffersHandler(db))
+	api.GET("/service-offers/:id", serviceOfferDetailHandler(db))
+	api.PUT("/service-offers/:id", serviceOfferDetailHandler(db))
+	api.DELETE("/service-offers/:id", serviceOfferDetailHandler(db))
 }

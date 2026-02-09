@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -70,221 +69,213 @@ func validateToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
-func setAuthCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   os.Getenv("MODE") == "production",
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400, // 24 hours
-	})
+func setAuthCookie(c *gin.Context, token string) {
+	c.SetCookie(
+		"auth_token",
+		token,
+		86400, // 24 hours
+		"/",
+		"",
+		os.Getenv("MODE") == "production",
+		true, // HttpOnly
+	)
 }
 
-func clearAuthCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   os.Getenv("MODE") == "production",
-		MaxAge:   -1,
-	})
+func clearAuthCookie(c *gin.Context) {
+	c.SetCookie(
+		"auth_token",
+		"",
+		-1,
+		"/",
+		"",
+		os.Getenv("MODE") == "production",
+		true, // HttpOnly
+	)
 }
 
-func getAuthToken(r *http.Request) string {
-	cookie, err := r.Cookie("auth_token")
+func getAuthToken(c *gin.Context) string {
+	token, err := c.Cookie("auth_token")
 	if err == nil {
-		return cookie.Value
+		return token
 	}
 	return ""
 }
 
 // Middleware to authenticate requests
-func authMiddleware(db *gorm.DB) func(http.HandlerFunc) http.HandlerFunc {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			token := getAuthToken(r)
-			if token == "" {
-				writeError(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-
-			claims, err := validateToken(token)
-			if err != nil {
-				writeError(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
-
-			var user User
-			if err := db.First(&user, claims.UserID).Error; err != nil {
-				writeError(w, "User not found", http.StatusUnauthorized)
-				return
-			}
-
-			if !user.IsActive {
-				writeError(w, "User is inactive", http.StatusForbidden)
-				return
-			}
-
-			// Store user ID in context-like manner (using request header for simplicity)
-			r.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
-			r.Header.Set("X-User-Role", string(user.Role))
-
-			next(w, r)
+func authMiddleware(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := getAuthToken(c)
+		if token == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+			c.Abort()
+			return
 		}
+
+		claims, err := validateToken(token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token"})
+			c.Abort()
+			return
+		}
+
+		var user User
+		if err := db.First(&user, claims.UserID).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "User not found"})
+			c.Abort()
+			return
+		}
+
+		if !user.IsActive {
+			c.JSON(http.StatusForbidden, gin.H{"message": "User is inactive"})
+			c.Abort()
+			return
+		}
+
+		// Store user info in context
+		c.Set("userID", user.ID)
+		c.Set("userRole", user.Role)
+		c.Set("user", &user)
+
+		c.Next()
 	}
 }
 
 // Middleware to require specific roles
-func requireRole(db *gorm.DB, roles ...UserRole) func(http.HandlerFunc) http.HandlerFunc {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-			userRole := UserRole(r.Header.Get("X-User-Role"))
-			
-			allowed := false
-			for _, role := range roles {
-				if userRole == role {
-					allowed = true
-					break
-				}
-			}
+func requireRole(db *gorm.DB, roles ...UserRole) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
+			return
+		}
 
-			if !allowed {
-				writeError(w, "Insufficient permissions", http.StatusForbidden)
-				return
-			}
+		userRole, exists := c.Get("userRole")
+		if !exists {
+			c.JSON(http.StatusForbidden, gin.H{"message": "Insufficient permissions"})
+			c.Abort()
+			return
+		}
 
-			next(w, r)
-		})
+		allowed := false
+		for _, role := range roles {
+			if userRole == role {
+				allowed = true
+				break
+			}
+		}
+
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"message": "Insufficient permissions"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
 	}
 }
 
-func getCurrentUser(r *http.Request) (uint, error) {
-	userIDStr := r.Header.Get("X-User-ID")
-	if userIDStr == "" {
+func getCurrentUser(c *gin.Context) (uint, error) {
+	userID, exists := c.Get("userID")
+	if !exists {
 		return 0, errors.New("user not authenticated")
 	}
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	return uint(userID), err
+	return userID.(uint), nil
 }
 
 // Auth handlers
 
-func loginHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
+func loginHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		var req struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.Email == "" || req.Password == "" {
-			writeError(w, "Email and password are required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Email and password are required"})
 			return
 		}
 
 		var user User
 		if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-			writeError(w, "Invalid credentials", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 			return
 		}
 
 		if !user.IsActive {
-			writeError(w, "User is inactive", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "User is inactive"})
 			return
 		}
 
 		if !checkPasswordHash(req.Password, user.PasswordHash) {
-			writeError(w, "Invalid credentials", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 			return
 		}
 
 		token, err := generateToken(&user)
 		if err != nil {
-			writeError(w, "Failed to generate token", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 			return
 		}
 
-		setAuthCookie(w, token)
+		setAuthCookie(c, token)
 
-		writeJSON(w, map[string]interface{}{
+		c.JSON(http.StatusOK, gin.H{
 			"user":  sanitizeUser(&user),
 			"token": token,
-		}, http.StatusOK)
+		})
 	}
 }
 
-func logoutHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		clearAuthCookie(w)
-		writeJSON(w, map[string]interface{}{"message": "Logged out successfully"}, http.StatusOK)
+func logoutHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		clearAuthCookie(c)
+		c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 	}
 }
 
-func getCurrentUserHandler(db *gorm.DB) http.HandlerFunc {
-	return authMiddleware(db)(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+func getCurrentUserHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authMiddleware(db)(c)
+		if c.IsAborted() {
 			return
 		}
 
-		userID, err := getCurrentUser(r)
+		userID, err := getCurrentUser(c)
 		if err != nil {
-			writeError(w, "Unauthorized", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 			return
 		}
 
 		var user User
 		if err := db.First(&user, userID).Error; err != nil {
-			writeError(w, "User not found", http.StatusNotFound)
+			c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
 			return
 		}
 
-		writeJSON(w, sanitizeUser(&user), http.StatusOK)
-	})
-}
-
-func checkFirstBootHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var count int64
-		db.Model(&User{}).Count(&count)
-
-		writeJSON(w, map[string]bool{"needsSetup": count == 0}, http.StatusOK)
+		c.JSON(http.StatusOK, sanitizeUser(&user))
 	}
 }
 
-func setupSuperUserHandler(db *gorm.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+func checkFirstBootHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var count int64
+		db.Model(&User{}).Count(&count)
 
+		c.JSON(http.StatusOK, gin.H{"needsSetup": count == 0})
+	}
+}
+
+func setupSuperUserHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		var count int64
 		db.Model(&User{}).Count(&count)
 		if count > 0 {
-			writeError(w, "Super user already exists", http.StatusForbidden)
+			c.JSON(http.StatusForbidden, gin.H{"message": "Super user already exists"})
 			return
 		}
 
@@ -294,19 +285,19 @@ func setupSuperUserHandler(db *gorm.DB) http.HandlerFunc {
 			Password string `json:"password"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body"})
 			return
 		}
 
 		if req.Name == "" || req.Email == "" || req.Password == "" {
-			writeError(w, "Name, email and password are required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Name, email and password are required"})
 			return
 		}
 
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
-			writeError(w, "Failed to hash password", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
 			return
 		}
 
@@ -319,22 +310,22 @@ func setupSuperUserHandler(db *gorm.DB) http.HandlerFunc {
 		}
 
 		if err := db.Create(&user).Error; err != nil {
-			writeError(w, "Failed to create user", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
 			return
 		}
 
 		token, err := generateToken(&user)
 		if err != nil {
-			writeError(w, "Failed to generate token", http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 			return
 		}
 
-		setAuthCookie(w, token)
+		setAuthCookie(c, token)
 
-		writeJSON(w, map[string]interface{}{
+		c.JSON(http.StatusCreated, gin.H{
 			"user":  sanitizeUser(&user),
 			"token": token,
-		}, http.StatusCreated)
+		})
 	}
 }
 
